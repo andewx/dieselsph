@@ -10,9 +10,9 @@ OVERVIEW:
 Diesel SPH develops a langrangian fluid simulation environment with the GO Language environment. Go language was chosen for the ability to quickly build and test frameworks and applications, it's superior runtime performance, and easy multi-threading support. Note that all context calls to the GLFW/GL frameworks requires a single locked thread once the windowed application starts.
  DEPENDENCIES:
 
-Uses Go 1.8+
+Uses <b>Go 1.8+</b>
 
-Currently this version uses <b>GL V4.1 / and GLFW wV3.2.<b> In the future we may look at build contraints in Go Lang in order to allow different versions of go-gl to be invoked. 
+Currently this version uses <b>GL V4.1 / and GLFW wV3.2.</b> In the future we may look at build contraints in Go Lang in order to allow different versions of go-gl to be invoked. 
 
 # For OpenGL 4.1
 $ go get -u github.com/go-gl/gl/v4.1-core/gl
