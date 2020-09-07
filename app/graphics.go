@@ -42,12 +42,15 @@ func InitOpenGL() uint32 {
 	version := gl.GoStr(gl.GetString(gl.VERSION))
 	log.Println("OpenGL version", version)
 
+	vtxFile := "../shaders/ParticleVTX.glsl"
+	frgFile := "../shaders/ParticleFRG.glsl"
+
 	prog := gl.CreateProgram()
 	gl.LinkProgram(prog)
 	return prog
 }
 
-func Draw(window *glfw.Window, program uint32) {
+func Draw(window *glfw.Window, program uint32, FluidScene *SPHFluid) {
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 	gl.UseProgram(program)
 
