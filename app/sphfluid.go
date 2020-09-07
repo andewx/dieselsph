@@ -92,7 +92,7 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *F.MassFluidParticle
 	fluid.SPHGrid.Load(fluid.Particles, int(fluid.NParticles))
 	fluid.SPHGridSearcher = &F.GridSearch{fluid.SPHGrid}
 	//Create Collider Mesh Box From List of triangles (12)
-
+	fmt.Printf("Calculating Densities\n")
 	fluid.UpdateDensities()
 	//Time step dependent on propogation of particle collisions
 	fluid.FluidDescriptor.TimeStep = (fluid.FluidDescriptor.OuterRadius * fluid.FluidDescriptor.Mass) / fluid.FluidDescriptor.SpeedSound
@@ -114,7 +114,6 @@ func (fluid *SPHFluid) UpdateDensities() {
 		for j := 0; j < nCollide; j++ {
 			dist := V.Length(V.Sub(thisParticle.Particle.Position, colliders[j].Particle.Position))
 			density += mass * fluid.InterpolationKernel.F(dist)
-			fmt.Printf("Densities Calculated\n")
 		}
 
 		thisParticle.Particle.Density = density
