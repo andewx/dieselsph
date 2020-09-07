@@ -16,11 +16,11 @@ import (
 //Ideally the physics is handled by gl vertex shaders
 
 type Triangle struct {
-	verts [3]*Vec.Vec32
+	Verts [3]*Vec.Vec32
 }
 
 type Mesh struct {
-	Mesh    []*Triangle
+	Mesh    []Triangle
 	Normals []Vec.Vec32
 }
 
@@ -33,14 +33,14 @@ type Sphere struct {
 
 func InitTriangle(a Vec.Vec32, b Vec.Vec32, c Vec.Vec32) Triangle {
 	V := Triangle{}
-	V.verts[0] = &a
-	V.verts[1] = &b
-	V.verts[2] = &c
+	V.Verts[0] = &a
+	V.Verts[1] = &b
+	V.Verts[2] = &c
 
 	return V
 }
 
-func InitMesh(triList []*Triangle) Mesh {
+func InitMesh(triList []Triangle) Mesh {
 	nMesh := Mesh{}
 	nMesh.Mesh = triList
 	nMesh.Normals = make([]Vec.Vec32, len(triList))
@@ -53,15 +53,15 @@ func InitMesh(triList []*Triangle) Mesh {
 
 func (tri *Triangle) Origin() *Triangle {
 	V := Triangle{}
-	V.verts[0] = tri.verts[0].Sub(*tri.verts[0])
-	V.verts[1] = tri.verts[1].Sub(*tri.verts[0])
-	V.verts[2] = tri.verts[2].Sub(*tri.verts[0])
+	V.Verts[0] = tri.Verts[0].Sub(*tri.Verts[0])
+	V.Verts[1] = tri.Verts[1].Sub(*tri.Verts[0])
+	V.Verts[2] = tri.Verts[2].Sub(*tri.Verts[0])
 
 	return &V
 }
 
 func (tri *Triangle) Normal() Vec.Vec32 {
-	N := Vec.Cross(Vec.Sub(*tri.verts[1], *tri.verts[0]), Vec.Sub(*tri.verts[2], *tri.verts[1]))
+	N := Vec.Cross(Vec.Sub(*tri.Verts[1], *tri.Verts[0]), Vec.Sub(*tri.Verts[2], *tri.Verts[1]))
 	return Vec.Normalize(N)
 }
 
@@ -112,12 +112,12 @@ func (g *Mesh) Collision(P *Fluid.Particle, dt float32) (Vec.Vec32, bool) {
 //Planar Projection Transform of a triangle onto a Normal Vector
 func (t *Triangle) Project(N Vec.Vec32) Triangle {
 	nTri := Triangle{}
-	a := Vec.ProjPlane(*t.verts[0], N)
-	b := Vec.ProjPlane(*t.verts[1], N)
-	c := Vec.ProjPlane(*t.verts[2], N)
-	nTri.verts[0] = &a
-	nTri.verts[1] = &b
-	nTri.verts[2] = &c
+	a := Vec.ProjPlane(*t.Verts[0], N)
+	b := Vec.ProjPlane(*t.Verts[1], N)
+	c := Vec.ProjPlane(*t.Verts[2], N)
+	nTri.Verts[0] = &a
+	nTri.Verts[1] = &b
+	nTri.Verts[2] = &c
 	return nTri
 }
 
@@ -135,9 +135,9 @@ func (tri *Triangle) Barycentric(p *Vec.Vec32) (*Vec.Vec2, float32, bool) {
 	fmt.Println("Point XY Plane Projection Coords: " + P.String())
 	DISTANCE := P1.Sub(*p).Length()
 	//Now Project All Points into the XZ Plane (XY?) to give cartesian Coordinates
-	AP := ProjTriangle.verts[0]
-	BP := ProjTriangle.verts[1]
-	CP := ProjTriangle.verts[2]
+	AP := ProjTriangle.Verts[0]
+	BP := ProjTriangle.Verts[1]
+	CP := ProjTriangle.Verts[2]
 
 	//Calculate Triangle Displacement
 	m0 := AP[0] - CP[0] // x1
@@ -164,6 +164,78 @@ func (tri *Triangle) Barycentric(p *Vec.Vec32) (*Vec.Vec2, float32, bool) {
 
 }
 
+//Triangle Mesh Box with 12 Triangles // 36 Vertexes
+func Box(w float32, h float32, d float32, o Vec.Vec32) *Mesh {
+	const TRIANGLES = 12
+	const Verts = 3
+	var BoxTris = make([]Triangle, 12)
+	x := o[0]
+	y := o[1]
+	z := o[2]
+
+	p := w / 2
+	q := h / 2
+	s := d / 2
+
+	//FRONT FACE -Z
+	BoxTris[0].Verts[0] = &Vec.Vec32{x - p, y - q, z - s} //LFB
+	BoxTris[0].Verts[1] = &Vec.Vec32{x - p, y + q, z - s} //LFT
+	BoxTris[0].Verts[2] = &Vec.Vec32{x + p, y - q, z - s} //RFB
+
+	BoxTris[1].Verts[0] = &Vec.Vec32{x - p, y + q, z - s} //LFT
+	BoxTris[1].Verts[1] = &Vec.Vec32{x + p, y + q, z - s} //RFT
+	BoxTris[1].Verts[2] = &Vec.Vec32{x + p, y - q, z - s} //RFB
+
+	//BACK FACE -Z
+	BoxTris[2].Verts[0] = &Vec.Vec32{x - p, y - q, z + s} //LBB
+	BoxTris[2].Verts[1] = &Vec.Vec32{x - p, y + q, z + s} //LBT
+	BoxTris[2].Verts[2] = &Vec.Vec32{x + p, y - q, z + s} //RBB
+
+	BoxTris[3].Verts[0] = &Vec.Vec32{x - p, y + q, z + s} //LBT
+	BoxTris[3].Verts[1] = &Vec.Vec32{x + p, y + q, z + s} //RBT
+	BoxTris[3].Verts[2] = &Vec.Vec32{x + p, y - q, z + s} //RBB
+
+	//BOTTOM FACE -Y
+	BoxTris[4].Verts[0] = &Vec.Vec32{x - p, y - q, z - s} //LFB
+	BoxTris[4].Verts[1] = &Vec.Vec32{x - p, y - q, z + s} //LBB
+	BoxTris[4].Verts[2] = &Vec.Vec32{x + p, y - q, z + s} //RBB
+
+	BoxTris[5].Verts[0] = &Vec.Vec32{x - p, y - q, z + s} //LFB
+	BoxTris[5].Verts[1] = &Vec.Vec32{x + p, y - q, z + s} //RFB
+	BoxTris[5].Verts[2] = &Vec.Vec32{x + p, y - q, z - s} //RBB
+
+	//Top FACE - Y
+	BoxTris[6].Verts[0] = &Vec.Vec32{x - p, y + q, z - s} //LFT
+	BoxTris[6].Verts[1] = &Vec.Vec32{x - p, y + q, z + s} //LBT
+	BoxTris[6].Verts[2] = &Vec.Vec32{x + p, y + q, z + s} //RBT
+
+	BoxTris[7].Verts[0] = &Vec.Vec32{x - p, y + q, z + s} //LFT
+	BoxTris[7].Verts[1] = &Vec.Vec32{x + p, y + q, z + s} //RFT
+	BoxTris[7].Verts[2] = &Vec.Vec32{x + p, y + q, z - s} //RBT
+
+	//LEFT FACE - X
+	BoxTris[8].Verts[0] = &Vec.Vec32{x - p, y + q, z + s} //LFT
+	BoxTris[8].Verts[1] = &Vec.Vec32{x - p, y - q, z + s} //LFB
+	BoxTris[8].Verts[2] = &Vec.Vec32{x - p, y - q, z + s} //LBB
+
+	BoxTris[9].Verts[0] = &Vec.Vec32{x - p, y + q, z + s} //LFT
+	BoxTris[9].Verts[1] = &Vec.Vec32{x - p, y + q, z - s} //LFB
+	BoxTris[9].Verts[2] = &Vec.Vec32{x - p, y - q, z + s} //LBB
+
+	//Right FACE - X
+	BoxTris[10].Verts[0] = &Vec.Vec32{x + p, y + q, z + s} //LFT
+	BoxTris[10].Verts[1] = &Vec.Vec32{x + p, y - q, z + s} //LFB
+	BoxTris[10].Verts[2] = &Vec.Vec32{x + p, y - q, z - s} //LBB
+
+	BoxTris[11].Verts[0] = &Vec.Vec32{x + p, y + q, z + s} //RFT
+	BoxTris[11].Verts[1] = &Vec.Vec32{x + p, y + q, z - s} //RFB
+	BoxTris[11].Verts[2] = &Vec.Vec32{x + p, y - q, z - s} //RBB
+
+	boxMesh := InitMesh(BoxTris)
+	return &boxMesh
+
+}
+
 //We  ill use the Displacement Vector Formulation In Order to Calculate Barycentric Coordinates
 //This eliminates the need for Projecting Vectors
 /*
@@ -171,10 +243,10 @@ func (tri * Triangle)Barycentric(p *Vec.Vec32)(*Vec.Vec32 ,float32){
 
   //Perform V0 Origin Transform
   T := tri.Origin()
-  P := Vec.Normalize(p.Sub(*tri.verts[0]))
-  A := Vec.Normalize(T.verts[0])
-  B := Vec.Normalize(T.verts[1])
-  C := Vec.Normalize(T.verts[2])
+  P := Vec.Normalize(p.Sub(*tri.Verts[0]))
+  A := Vec.Normalize(T.Verts[0])
+  B := Vec.Normalize(T.Verts[1])
+  C := Vec.Normalize(T.Verts[2])
   //Project our Point into the Plane of our triangle
   N := Vec.Cross(*C,*B)
   PROJ :=Vec.Proj(*P,N)

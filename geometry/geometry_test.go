@@ -15,9 +15,9 @@ func TestGeometry(t *testing.T) {
 	P1 := vector.Vec32{-0.5, 0, -0.5}
 
 	tTriangle := Triangle{}
-	tTriangle.verts[0] = &V0
-	tTriangle.verts[1] = &V1
-	tTriangle.verts[2] = &V2
+	tTriangle.Verts[0] = &V0
+	tTriangle.Verts[1] = &V1
+	tTriangle.Verts[2] = &V2
 
 	//Return Collision and result between each of the three points
 	fmt.Printf("Testing Triangle Collisions\n")
