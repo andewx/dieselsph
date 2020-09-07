@@ -4,6 +4,7 @@ import (
 	F "diesel.com/diesel/fluid"
 	G "diesel.com/diesel/geometry"
 	V "diesel.com/diesel/vector"
+	"fmt"
 	Math "math"
 )
 
@@ -32,13 +33,72 @@ type SPHFluid struct {
 	Time                float32              //Animation Time
 	TimeStep            float32              //Time Step
 	TimeLast            float32              //Time Last
+	NParticles          int32
+}
+
+//Fluid System Description - Used for boxed particle & collider mesh generation
+type BoxFluidSystem struct {
+	Origin      V.Vec32 //Box Origin //Typically Zero
+	Width       float32 //Width Centered
+	Height      float32 //Height Centered
+	Depth       float32 //Depth Centered
+	WidthCells  int     //Width cells (columns in width)
+	HeightCells int     //Height cells (rows and column height)
+	DepthCells  int     //Depth Cells (depth rows)
 }
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
 //Initialize does heavy lifting of setting up the Grid Data and Computing Initial
 //Particle Densities
-func (fluid *SPHFluid) Initialize() {
+func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *F.MassFluidParticle) {
+
+	//Initialize Particles
+	fluid.NParticles = int32(init.WidthCells * init.HeightCells * init.DepthCells)
+	fluid.FluidDescriptor = mpf
+	fluid.InterpolationKernel = F.InitGaussian(mpf.InnerRadius)
+	fluid.GradientKernel = F.InitCubic(fluid.FluidDescriptor.InnerRadius)
+	wStep := init.Width / float32(init.WidthCells)
+	hStep := init.Height / float32(init.HeightCells)
+	dStep := init.Depth / float32(init.DepthCells)
+	minW := init.Origin[0] - (init.Width / 2)
+	minH := init.Origin[1] - (init.Height / 2)
+	minD := init.Origin[2] - (init.Depth / 2)
+
+	fluid.Particles = make([]*F.ParticleNode, fluid.NParticles)
+	fluid.SPHGrid = F.CustomGrid(init.Width, init.WidthCells) //SPH Loses a degree of Dimensionality 3d->2d
+
+	//Initialize Particle Sets
+
+	for i := 0; i < init.WidthCells; i++ {
+		for j := 0; j < init.HeightCells; j++ {
+			for k := 0; k < init.DepthCells; k++ {
+
+				if32 := float32(i)
+				jf32 := float32(j)
+				kf32 := float32(k)
+
+				nVel := V.Vec32{0, 0, 0}
+				nPos := V.Vec32{float32(minW + wStep*if32), float32(minH + hStep*jf32), float32(minD + dStep*kf32)}
+				//Particle{ Vel, Pos, Force, Index, Dens, Press, SDF}
+				index := i*init.WidthCells*init.HeightCells + int(j*init.HeightCells) + int(k)
+				fmt.Printf("I: %d, J: %d, K: %d\nIndex: %d\n", i, j, k, index)
+				particle := F.Particle{nVel, nPos, V.Vec32{0, 0, 0}, 0.0, 0.0, nil}
+				fmt.Printf("Particle Made\n")
+				fluid.Particles[index] = &F.ParticleNode{&particle, nil} //Okay this is a list but we use a spatial grid okay....get rid of that
+				fmt.Printf("Particle Added To List\n")
+			}
+		}
+	} //End Particle Init
+
+	//Allocates Particles to Spatial Hash Grid
+	fluid.SPHGrid.Load(fluid.Particles, int(fluid.NParticles))
+	fmt.Printf("Fluid Created\n")
+	fluid.SPHGridSearcher = &F.GridSearch{fluid.SPHGrid}
+	fmt.Printf("Fluid Grid Created\n")
+
+	//Create Collider Mesh Box From List of triangles (12)
+
 	fluid.UpdateDensities()
 	//Time step dependent on propogation of particle collisions
 	fluid.FluidDescriptor.TimeStep = (fluid.FluidDescriptor.OuterRadius * fluid.FluidDescriptor.Mass) / fluid.FluidDescriptor.SpeedSound
@@ -47,12 +107,14 @@ func (fluid *SPHFluid) Initialize() {
 
 //Updates Densities associated with each particle position with Gaussian Kernel
 func (fluid *SPHFluid) UpdateDensities() {
-	FIELD := len(fluid.Particles)
+	FIELD := fluid.NParticles
 	//Compute Density Fieldsa
-	for i := 0; i < FIELD; i++ {
+	for i := 0; i < int(FIELD); i++ {
 		//For Each Particle Calculate Kernel Based Summation
 		thisParticle := fluid.Particles[i]
+		fmt.Printf("We Have A Particle with position: [%f][%f][%f]\n", thisParticle.Particle.Position[0], thisParticle.Particle.Position[1], thisParticle.Particle.Position[2])
 		neighbors, _ := fluid.SPHGridSearcher.GetParticleColliders(thisParticle, fluid.FluidDescriptor)
+		fmt.Printf("Neighbors Found\n")
 		n := len(neighbors)
 		mass := fluid.FluidDescriptor.Mass
 		density := mass
@@ -60,6 +122,7 @@ func (fluid *SPHFluid) UpdateDensities() {
 			dist := V.Length(V.Sub(thisParticle.Particle.Position, neighbors[i].Particle.Position))
 			density += mass * fluid.InterpolationKernel.F(dist)
 		}
+		fmt.Printf("Densities Calculated\n")
 		thisParticle.Particle.Density = density
 	}
 }

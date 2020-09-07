@@ -13,6 +13,7 @@ import (
 //Particle System runs from world coordinate intersections so no modelview / projection transforms
 
 //These are for software object management and not yet being handled as single point buffer arrays for GPU
+//Ideally the physics is handled by gl vertex shaders
 
 type Triangle struct {
 	verts [3]*Vec.Vec32
@@ -21,6 +22,11 @@ type Triangle struct {
 type Mesh struct {
 	Mesh    []*Triangle
 	Normals []Vec.Vec32
+}
+
+type Sphere struct {
+	radius float32
+	origin Vec.Vec32
 }
 
 //Triangle Subtractions

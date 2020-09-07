@@ -11,7 +11,7 @@ import (
 //Spatial Hashing Structure - Computes a Linked Hash List of Particle Positions
 type ParticleNode struct {
 	Particle *Particle
-	link     *ParticleNode
+	Link     *ParticleNode
 }
 
 type ParticleNodeIter struct {
@@ -153,7 +153,7 @@ func (s *SpatialHashGrid) InsertNode(p *ParticleNode) error {
 //Takes care of collision list due to imperfect hashing
 func (p *ParticleNodeIter) Insert(nextNode *ParticleNode) error {
 	//Make sure Particle Node Address Isn't Referenced
-	p.P.link = nextNode
+	p.P.Link = nextNode
 	return nil
 }
 
@@ -175,8 +175,8 @@ func (p *ParticleNodeIter) Value() *Particle {
 
 //Advances to next stored node - if node was not found this is reported in the error context
 func (p *ParticleNodeIter) Next() bool {
-	if p.P.link != nil {
-		p.P = p.P.link
+	if p.P.Link != nil {
+		p.P = p.P.Link
 		p.currIdx++
 		return true
 	}

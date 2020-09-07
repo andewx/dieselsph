@@ -19,7 +19,7 @@ func TestParticle(t *testing.T) {
 	for i := 0; i < PARTICLES; i++ {
 		nVel := vector.Vec32{rnd.Float32() * 5.0, rnd.Float32() * 5.0, rnd.Float32() * 5.0}
 		nPos := vector.Vec32{rnd.Float32() * 10.0, rnd.Float32() * 10, rnd.Float32() * 10.0}
-		particle := Particle{nVel, nPos, vector.Vec32{0, 0, 0}, i, 0.0, 0.0, nil}
+		particle := Particle{nVel, nPos, vector.Vec32{0, 0, 0}, 0.0, 0.0, nil}
 		particleSet[i] = ParticleNode{&particle, nil}
 		//
 	}
@@ -50,7 +50,7 @@ func TestGrid(t *testing.T) {
 	for i := 0; i < PARTICLES; i++ {
 		nVel := vector.Vec32{rnd.Float32() * 5.0, rnd.Float32() * 5.0, rnd.Float32() * 5.0}
 		nPos := vector.Vec32{rnd.Float32() * 100.0, rnd.Float32() * 100, rnd.Float32() * 100.0}
-		particle := Particle{nVel, nPos, vector.Vec32{0, 0, 0}, i, 0.0, 0.0, nil}
+		particle := Particle{nVel, nPos, vector.Vec32{0, 0, 0}, 0.0, 0.0, nil}
 		particleSet[i] = &ParticleNode{&particle, nil}
 	}
 
@@ -98,7 +98,7 @@ func BenchmarkGridOperations(b *testing.B) {
 	for i := 0; i < PARTICLES; i++ {
 		nVel := vector.Vec32{rnd.Float32() * 5.0, rnd.Float32() * 5.0, rnd.Float32() * 5.0}
 		nPos := vector.Vec32{rnd.Float32() * 100.0, rnd.Float32() * 100, rnd.Float32() * 100.0}
-		particle := Particle{nVel, nPos, vector.Vec32{0, 0, 0}, i, 0.0, 0.0, nil}
+		particle := Particle{nVel, nPos, vector.Vec32{0, 0, 0}, 0.0, 0.0, nil}
 		particleSet[i] = &ParticleNode{&particle, nil}
 	}
 

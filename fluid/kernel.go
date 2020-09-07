@@ -24,7 +24,7 @@ type CubicKernel struct {
 	H [5]float32
 }
 
-func InitGuassian(radius float32) GaussianKernel {
+func InitGaussian(radius float32) GaussianKernel {
 	G := GaussianKernel{}
 	G.H[0] = radius
 	G.H[1] = radius * radius

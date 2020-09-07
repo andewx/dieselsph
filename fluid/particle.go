@@ -13,7 +13,6 @@ type Particle struct {
 	Velocity            vector.Vec32
 	Position            vector.Vec32
 	Force               vector.Vec32
-	index               int
 	Density             float32
 	Pressure            float32
 	SignedDistanceField []float32 //indexes sdf for each collision object
