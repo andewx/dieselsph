@@ -72,7 +72,7 @@ func (shg *GridSearch) GetNeighborGrid(particleNode *ParticleNode) (*NeighborGri
 }
 
 //Main Neighbor Grid Colliders Functionality
-func (shg *GridSearch) GetParticleColliders(particleNode *ParticleNode, fluid *MassFluidParticle) ([]*ParticleNode, error) {
+func (shg *GridSearch) GetParticleColliders(particleNode *ParticleNode, fluid *MassFluidParticle) ([]*ParticleNode, int, error) {
 
 	neighbors, _ := shg.GetNeighborGrid(particleNode)
 	colliders := make([]*ParticleNode, 10)
@@ -83,7 +83,7 @@ func (shg *GridSearch) GetParticleColliders(particleNode *ParticleNode, fluid *M
 		PNodeIter := NewParticleIter(PNode)
 
 		if PNode == nil {
-			return colliders, fmt.Errorf("Invalid Grid Location Accessed\n")
+			return colliders, count, fmt.Errorf("Invalid Grid Location Accessed\n")
 		}
 
 		for PNodeIter.Next() {
@@ -96,5 +96,5 @@ func (shg *GridSearch) GetParticleColliders(particleNode *ParticleNode, fluid *M
 	}
 
 	//Search all neighbords for particles within particle radius
-	return colliders, nil
+	return colliders, count, nil
 }

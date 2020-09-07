@@ -82,21 +82,15 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *F.MassFluidParticle
 				nPos := V.Vec32{float32(minW + wStep*if32), float32(minH + hStep*jf32), float32(minD + dStep*kf32)}
 				//Particle{ Vel, Pos, Force, Index, Dens, Press, SDF}
 				index := i*init.WidthCells*init.HeightCells + int(j*init.HeightCells) + int(k)
-				fmt.Printf("I: %d, J: %d, K: %d\nIndex: %d\n", i, j, k, index)
 				particle := F.Particle{nVel, nPos, V.Vec32{0, 0, 0}, 0.0, 0.0, nil}
-				fmt.Printf("Particle Made\n")
 				fluid.Particles[index] = &F.ParticleNode{&particle, nil} //Okay this is a list but we use a spatial grid okay....get rid of that
-				fmt.Printf("Particle Added To List\n")
 			}
 		}
 	} //End Particle Init
 
 	//Allocates Particles to Spatial Hash Grid
 	fluid.SPHGrid.Load(fluid.Particles, int(fluid.NParticles))
-	fmt.Printf("Fluid Created\n")
 	fluid.SPHGridSearcher = &F.GridSearch{fluid.SPHGrid}
-	fmt.Printf("Fluid Grid Created\n")
-
 	//Create Collider Mesh Box From List of triangles (12)
 
 	fluid.UpdateDensities()
@@ -112,17 +106,17 @@ func (fluid *SPHFluid) UpdateDensities() {
 	for i := 0; i < int(FIELD); i++ {
 		//For Each Particle Calculate Kernel Based Summation
 		thisParticle := fluid.Particles[i]
-		fmt.Printf("We Have A Particle with position: [%f][%f][%f]\n", thisParticle.Particle.Position[0], thisParticle.Particle.Position[1], thisParticle.Particle.Position[2])
-		neighbors, _ := fluid.SPHGridSearcher.GetParticleColliders(thisParticle, fluid.FluidDescriptor)
-		fmt.Printf("Neighbors Found\n")
-		n := len(neighbors)
+
+		colliders, nCollide, _ := fluid.SPHGridSearcher.GetParticleColliders(thisParticle, fluid.FluidDescriptor)
+
 		mass := fluid.FluidDescriptor.Mass
 		density := mass
-		for j := 0; j < n; j++ {
-			dist := V.Length(V.Sub(thisParticle.Particle.Position, neighbors[i].Particle.Position))
+		for j := 0; j < nCollide; j++ {
+			dist := V.Length(V.Sub(thisParticle.Particle.Position, colliders[j].Particle.Position))
 			density += mass * fluid.InterpolationKernel.F(dist)
+			fmt.Printf("Densities Calculated\n")
 		}
-		fmt.Printf("Densities Calculated\n")
+
 		thisParticle.Particle.Density = density
 	}
 }
@@ -134,13 +128,12 @@ func (fluid *SPHFluid) DensityGradient(i int) V.Vec32 {
 	//For Each Particle Calculate Kernel Based Summation
 	DensityGrad := V.Vec32{}
 	thisParticle := fluid.Particles[i]
-	neighbors, _ := fluid.SPHGridSearcher.GetParticleColliders(thisParticle, fluid.FluidDescriptor)
-	n := len(neighbors)
+	colliders, nCount, _ := fluid.SPHGridSearcher.GetParticleColliders(thisParticle, fluid.FluidDescriptor)
 	mass := fluid.FluidDescriptor.Mass
 	iDensity := thisParticle.Particle.Density
 
-	for j := 0; j < n; j++ {
-		p := neighbors[i].Particle
+	for j := 0; j < nCount; j++ {
+		p := colliders[i].Particle
 		jDensity := p.Density
 		dir := V.Sub(p.Position, thisParticle.Particle.Position)
 		dist := V.Length(dir)
@@ -159,13 +152,12 @@ func (fluid *SPHFluid) Pressure(i int) {
 
 	//For Each Particle Calculate Kernel Based Summation
 	thisParticle := fluid.Particles[i]
-	neighbors, _ := fluid.SPHGridSearcher.GetParticleColliders(thisParticle, fluid.FluidDescriptor)
-	n := len(neighbors)
+	neighbors, nCount, _ := fluid.SPHGridSearcher.GetParticleColliders(thisParticle, fluid.FluidDescriptor)
 	mass := fluid.FluidDescriptor.Mass
 	iDensity := thisParticle.Particle.Density
 
-	for j := 0; j < n; j++ {
-		p := neighbors[i].Particle
+	for j := 0; j < nCount; j++ {
+		p := neighbors[j].Particle
 		jDensity := p.Density
 		dir := V.Sub(p.Position, thisParticle.Particle.Position)
 		dist := V.Length(dir)
@@ -183,16 +175,15 @@ func (fluid *SPHFluid) Viscosity(i int) {
 
 	//For Each Particle Calculate Kernel Based Summation
 	thisParticle := fluid.Particles[i]
-	neighbors, _ := fluid.SPHGridSearcher.GetParticleColliders(thisParticle, fluid.FluidDescriptor)
-	n := len(neighbors)
+	neighbors, nCount, _ := fluid.SPHGridSearcher.GetParticleColliders(thisParticle, fluid.FluidDescriptor)
 	mass := fluid.FluidDescriptor.Mass
 
 	iDensity := thisParticle.Particle.Density
 	v := 1.30 / iDensity //viscosity
 	vi := thisParticle.Particle.Velocity
 
-	for j := 0; j < n; j++ {
-		p := neighbors[i].Particle
+	for j := 0; j < nCount; j++ {
+		p := neighbors[j].Particle
 		vj := p.Velocity
 		jDensity := p.Density
 
