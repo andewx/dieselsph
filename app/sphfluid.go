@@ -88,6 +88,8 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *F.MassFluidParticle
 		}
 	} //End Particle Init
 
+	fluid.Colliders = G.Box(10.0, 10.0, 10.0, V.Vec32{}) //Initialize Collider Box
+
 	//Allocates Particles to Spatial Hash Grid
 	fluid.SPHGrid.Load(fluid.Particles, int(fluid.NParticles))
 	fluid.SPHGridSearcher = &F.GridSearch{fluid.SPHGrid}
@@ -132,7 +134,7 @@ func (fluid *SPHFluid) DensityGradient(i int) V.Vec32 {
 	iDensity := thisParticle.Particle.Density
 
 	for j := 0; j < nCount; j++ {
-		p := colliders[i].Particle
+		p := colliders[j].Particle
 		jDensity := p.Density
 		dir := V.Sub(p.Position, thisParticle.Particle.Position)
 		dist := V.Length(dir)
