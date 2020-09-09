@@ -36,7 +36,7 @@ func InitGLFW(a *AppWindow) *glfw.Window {
 }
 
 // initOpenGL initializes OpenGL and returns an intiialized program.
-func InitOpenGL() uint32 {
+func InitOpenGL(sph *SPHFluid) uint32 {
 
 	if err := gl.Init(); err != nil {
 		panic(err)
@@ -54,6 +54,7 @@ func InitOpenGL() uint32 {
 	sourceFRG, err := ioutil.ReadFile(frgFile)
 	checkError(err)
 
+	//Handled by local function compile Shader
 	vtxSHO, err := compileShader(string(sourceVTX), gl.VERTEX_SHADER)
 	frgSHO, err := compileShader(string(sourceFRG), gl.FRAGMENT_SHADER)
 
@@ -63,6 +64,24 @@ func InitOpenGL() uint32 {
 	gl.AttachShader(prog, vtxSHO)
 	gl.AttachShader(prog, frgSHO)
 	gl.LinkProgram(prog)
+
+	//when we move to GPU compute this will be each attribute in a VBO
+	var [2]vbo uint32 //we will pass both the positions and velocity of each particle
+	var vao uint32
+
+	//VBO/VAO handle
+	gl.GenBuffers(2, &vbo)
+	gl.GenVertexArrays(1, &vao)
+	gl.BindVertexArray(vao)
+  gl.BindBuffer(GL_ARRAY_BUFFER, vbo[0]);
+  gl.BufferData(GL_ARRAY_BUFFER, sph.NParticles * 4, , gl.DYNAMIC_DRAW); //float 32 (4 bytes)
+  gl.VertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0); /* Coord data VBO[0], 3 Verts per coord */
+  gl.EnableVertexAttribArray(0);
+	gl.BindBuffer(GL_ARRAY_BUFFER, vbo[1]); //Enable and bind second attribute buffer
+	gl.BufferData(GL_ARRAY_BUFFER, sph.NParticles * 4, colors, gl.DYNAMIC_DRAW); //float 32 (4 bytes)
+	gl.VertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
+  gl.EnableVertexAttribArray(1);
+
 	return prog
 }
 

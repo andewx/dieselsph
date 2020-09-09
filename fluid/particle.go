@@ -10,12 +10,9 @@ import (
 
 //Particle Values to be interpolated will be handled from its own struct
 type Particle struct {
-	Velocity            vector.Vec32
-	Position            vector.Vec32
-	Force               vector.Vec32
-	Density             float32
-	Pressure            float32
-	SignedDistanceField []float32 //indexes sdf for each collision object
+	Force    vector.Vec32
+	Density  float32
+	Pressure float32
 }
 
 //MassFluidParticle - Fluid system particle properties extended to system
@@ -50,49 +47,35 @@ func (h *Particle) Clear() {
 	h.Force[2] = 0.0
 }
 
-//Uodates Fluid Particle Position - However we need to resolve collisions
-func (h *Particle) Update(fluid MassFluidParticle) error {
+//Integrates the current particle forces and updates the velocity vector.
+//Also updates the position of the particle. Clears all forces
+//Utilizes MassFluidParticle description for timestep modifier.
+func (h *Particle) Update(fluid MassFluidParticle, position *vector.Vec32, velocity *vector.Vec32) error {
 
 	//Check Velocity and Position vector memory Positions
-	if &h.Velocity == nil || &h.Position == nil {
+	if &position == nil || velocity == nil {
 		return fmt.Errorf("Error: Particle Velocity or Position Vectors Not Defined In Memory")
 	}
 
-	h.Velocity.Add(*h.Force.Scale(1 / fluid.Mass).Scale(fluid.TimeStep))
-	h.Position.Add(*h.Velocity.Scale(fluid.TimeStep))
+	//Integrates fluid force
+	velocity.Add(*h.Force.Scale(fluid.TimeStep / fluid.Mass))
+
+	//Updates Position
+	position.Add(velocity.Scale(fluid.TimeStep))
 	//Clear Particle State
 	h.Force.Clear()
 
 	return nil
 }
 
-func (h *Particle) Momentum(mass float32) (float32, error) {
-	return h.Velocity.Length() * mass, nil
-}
-
-func (h *Particle) String() (string, error) {
-	s := fmt.Sprintf("(Pos: %f, %f, %f) (Vel: %f, %f, %f)\n", h.Position[0], h.Position[1],
-		h.Position[2], h.Velocity[0], h.Velocity[1], h.Velocity[2])
-
-	return s, nil
-}
-
-func (h *Particle) GetPosition() *vector.Vec32 {
-	return &h.Position
-}
-
-func (h *Particle) GetVelocity() *vector.Vec32 {
-	return &h.Velocity
-}
-
 //Update particle based on collision with a restitution Velocity
 //Particle tangential drag should deviate from perfect reflection
-func (h *Particle) Collide(norm vector.Vec32) error {
+func (h *Particle) Collide(norm vector.Vec32, V *vector.Vec32) error {
 	//Resitution Force + Normal Component + Tangential Component
 
 	k_stiff := float32(0.85)
-	h.Velocity.Reflect(norm)
-	h.Velocity.Scale(k_stiff)
+	V.Reflect(norm)
+	V.Scale(k_stiff)
 
 	return nil
 }

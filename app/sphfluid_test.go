@@ -30,7 +30,7 @@ func TestSPH(t *testing.T) {
 	runtime.LockOSThread() //OpenGL can only handle one thread context
 	window := InitGLFW(&glWindowProperties)
 	defer glfw.Terminate()
-	program := InitOpenGL()
+	program := InitOpenGL(&sphfluid)
 
 	//MAIN ---------------------
 	//
