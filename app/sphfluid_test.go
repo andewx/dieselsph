@@ -20,8 +20,8 @@ func TestSPH(t *testing.T) {
 
 	//Fluid Setup
 	var mfp = F.MassFluidParticle{0.01, 0.3, 0.02, 0.04, 0.05, 1500, 1, 1.4} //Particle Mass Description
-	var boxfluid = BoxFluidSystem{V.Vec32{}, 10, 10, 10, 10, 10, 10}         //Box System Description
-	var sphfluid = SPHFluid{}                                                //Main Fluid Component
+	var boxfluid = F.BoxFluidSystem{V.Vec32{}, 10, 10, 10, 10, 10, 10}       //Box System Description
+	var sphfluid = F.SPHFluid{}                                              //Main Fluid Component
 
 	sphfluid.Initialize(&boxfluid, &mfp)
 
@@ -30,14 +30,14 @@ func TestSPH(t *testing.T) {
 	runtime.LockOSThread() //OpenGL can only handle one thread context
 	window := InitGLFW(&glWindowProperties)
 	defer glfw.Terminate()
-	program := InitOpenGL()
+	program := InitOpenGL(&sphfluid)
 
 	//MAIN ---------------------
 	//
 	//--------------------------
 	for !window.ShouldClose() {
 		sphfluid.Compute()
-		Draw(window, program)
+		Draw(window, program, &sphfluid)
 	}
 	//OpenGL Drawing Routine Done
 }

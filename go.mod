@@ -56,6 +56,7 @@ require (
 	github.com/tetafro/godot v0.4.2 // indirect
 	github.com/timakin/bodyclose v0.0.0-20200424151742-cb6215831a94 // indirect
 	github.com/tpng/gopkgs v0.0.0-20180428091733-81e90e22e204 // indirect
+	github.com/tsenart/deadcode v0.0.0-20160724212837-210d2dc333e9 // indirect
 	github.com/walle/lll v1.0.1 // indirect
 	github.com/zmb3/goaddimport v0.0.0-20170810013102-4ab94a07ab86 // indirect
 	golang.org/x/mod v0.3.0 // indirect

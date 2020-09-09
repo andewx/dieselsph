@@ -3,7 +3,8 @@ Diesel Smoothed Particle Hydrodynamics Library. Using Go Language, Go-GL / GLFW 
 
 # README
 
-This version of Diesel SPH is still in development and not yet considered releasable for application development. However you may clone and work on your own repository.
+This version of Diesel SPH is still in development and not yet considered releasable for application development. However you may clone and work on your own repository. Currently we are testing just the SPH methods and rendering.
+Next order of business is moving fluid logic to the GPU side of the house and dealing with GPU shaders primarily
 
 # OVERVIEW
 
@@ -29,6 +30,7 @@ $ go get github.com/go-gl/glfw/v3.2/glfw
 ##  TODO
 
 1. Packages fluid and geometry requires further testing and validation
+2. Run fluid computation through OpenGL
 2. Create new package for high level fluid parameterization and scene building (composer)
 3. OpenGL Tasks (Translate Simulation into OpenGL Environment) - Consider Using G3N Framework and Translate Fluid into GL Geometry
 4. Export Scene for Lux Render / PBRT / Cycles Ray Tracing
