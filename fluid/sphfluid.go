@@ -1,10 +1,8 @@
-package app
+package fluid
 
 import (
-	F "diesel.com/diesel/fluid"
 	G "diesel.com/diesel/geometry"
 	V "diesel.com/diesel/vector"
-	"fmt"
 	Math "math"
 )
 
@@ -12,7 +10,7 @@ import (
 //and animation context. Does not initialize the specific construction of the particle
 //field to be studied.
 
-//Will handle geometry export to Mistuba 3D Render and other formats. IsoSurface
+//Will handle geometry export to Mistuba 3D Render and other formaTime.TS. IsoSurface
 //Meshes will be exported to .obj file format.
 
 //These particle positions will need to be passed to OpenGL Vertex Buffers
@@ -23,31 +21,43 @@ const EOS_EXP = 1 //EOS Stiffness Parameter
 
 //SPHFluid - Is a PCISPH Fluid with Predictive Correction of Pressures
 type SPHFluid struct {
-	SPHGrid         *F.SpatialHashGrid   //Spatial Hash Grid For Neighbor Particles
-	SPHGridSearcher *F.GridSearch        //Adds Functionality to the SPHGrid
-	Particles       []*F.ParticleNode    //Particle System Array
-	Colliders       *G.Mesh              //Collider Triangle Meshes
-	Mfp             *F.MassFluidParticle //Fluid Particle Descriptor
-	ItrpKernel      F.GaussianKernel     //Gaussian Kernel Typically
-	GradKernel      F.CubicKernel        //Cubic Kernel For Derivative Kernels
-	Timer           Timer
-	Count           int32
-	Positions       []V.Vec32 //Particle pos
-	Velocities      []V.Vec32 //Particle vel
-	Forces          []V.Vec32 //Particle
-	Densities       []V.Vec32 //Densities
-	Pressures       []V.Vec32 //Pressures
+	SPHGrid    *SpatialHashGrid   //Spatial Hash Grid For Neighbor Particles
+	Colliders  *G.Mesh            //Collider Triangle Meshes
+	Mfp        *MassFluidParticle //Fluid Particle Descriptor
+	ItrpKernel GaussianKernel     //Gaussian Kernel Typically
+	GradKernel CubicKernel        //Cubic Kernel For Derivative Kernels
+	Timer      Timer
+	Count      int       //Count of particles
+	Positions  []V.Vec32 //Particle pos
+	Velocities []V.Vec32 //Particle vel
+	Forces     []V.Vec32 //Particle
+	Densities  []float32 //Densities
+	Pressures  []float32 //Pressures
+}
+
+//MassFluidParticle - Fluid system particle properties extended to system
+//mass is in kg / viscosity scalar coefficient / innerRadius is the innerParticle
+//boundary, outerRadius is utilized for surface reconstruction
+type MassFluidParticle struct {
+	Mass          float32
+	Viscosity     float32
+	InnerRadius   float32
+	OuterRadius   float32
+	TimeStep      float32
+	SpeedSound    float32
+	TargetDensity float32
+	EosExp        float32
 }
 
 type Timer struct {
 	T        float32
-	TSTEP    float32
+	TS       float32
 	TIMELAST float32
 }
 
 func (t *Timer) StepTime() {
-	t.TIMELAST = t.TIME
-	t.TIME = t.TIME + t.TSTEP
+	t.TIMELAST = t.T
+	t.T = t.T + t.TS
 }
 
 //Fluid System Description - Used for boxed particle & collider mesh generation
@@ -65,13 +75,13 @@ type BoxFluidSystem struct {
 //-----------------------------------------------------------------------------
 //Initialize does heavy lifting of setting up the Grid Data and Computing Initial
 //Particle Densities
-func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *F.MassFluidParticle) {
+func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle) {
 
 	//Initialize Particles
-	fluid.Count = int32(init.WidthCells * init.HeightCells * init.DepthCells)
+	fluid.Count = init.WidthCells * init.HeightCells * init.DepthCells
 	fluid.Mfp = mpf
-	fluid.ItrpKernel = F.InitGaussian(mpf.InnerRadius)
-	fluid.GradKernel = F.InitCubic(fluid.Mfp.InnerRadius)
+	fluid.ItrpKernel = InitGaussian(mpf.InnerRadius)
+	fluid.GradKernel = InitCubic(fluid.Mfp.InnerRadius)
 	wStep := init.Width / float32(init.WidthCells)
 	hStep := init.Height / float32(init.HeightCells)
 	dStep := init.Depth / float32(init.DepthCells)
@@ -80,27 +90,23 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *F.MassFluidParticle
 	minD := init.Origin[2] - (init.Depth / 2)
 
 	//Initialize buffers //
-	fluid.Positions = make([]V.Vec32, fluid.Count)
+	fluid.Positions = make([]V.Vec32, fluid.Count) //Must set positions
 	fluid.Velocities = make([]V.Vec32, fluid.Count)
-	fluid.Particles = make([]*F.ParticleNode, fluid.Count)
-	fluid.SPHGrid = F.CustomGrid(init.Width, init.WidthCells) //SPH Loses a degree of Dimensionality 3d->2d
+	fluid.Pressures = make([]float32, fluid.Count)
+	fluid.Densities = make([]float32, fluid.Count)
+	fluid.Forces = make([]V.Vec32, fluid.Count)
+	fluid.SPHGrid = AllocateGridUserDefined(init.Width, init.WidthCells) //SPH Loses a degree of Dimensionality 3d->2d
 
-	//Initialize Particle Sets
-
+	//Initialize Particle Positions and Stuff
 	for i := 0; i < init.WidthCells; i++ {
 		for j := 0; j < init.HeightCells; j++ {
 			for k := 0; k < init.DepthCells; k++ {
-
 				if32 := float32(i)
 				jf32 := float32(j)
 				kf32 := float32(k)
-
-				nVel := V.Vec32{0, 0, 0}
 				nPos := V.Vec32{float32(minW + wStep*if32), float32(minH + hStep*jf32), float32(minD + dStep*kf32)}
-				//Particle{ Vel, Pos, Force, Index, Dens, Press, SDF}
 				index := i*init.WidthCells*init.HeightCells + int(j*init.HeightCells) + int(k)
-				particle := F.Particle{V.Vec32{0, 0, 0}, 0.0, 0.0, nil}
-				fluid.Particles[index] = &F.ParticleNode{&particle, nil} //Okay this is a list but we use a spatial grid okay....get rid of that
+				fluid.Positions[index] = nPos
 			}
 		}
 	} //End Particle Init
@@ -108,14 +114,12 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *F.MassFluidParticle
 	fluid.Colliders = G.Box(10.0, 10.0, 10.0, V.Vec32{}) //Initialize Collider Box
 
 	//Allocates Particles to Spatial Hash Grid
-	fluid.SPHGrid.Load(fluid.Particles, int(fluid.Count))
-	fluid.SPHGridSearcher = &F.GridSearch{fluid.SPHGrid}
+	fluid.SPHGrid.Load(fluid.Positions)
 	//Create Collider Mesh Box From List of triangles (12)
-	fmt.Printf("Calculating Densities\n")
 	fluid.UpdateDensities()
 	//Time step dependent on propogation of particle collisions
-	fluid.Mfp.TimeStep = (fluid.Mfp.OuterRadius * fluid.Mfp.Mass) / fluid.Mfp.SpeedSound
-	fluid.TimeStep = fluid.Mfp.TimeStep
+	fluid.Timer.TS = (fluid.Mfp.OuterRadius * fluid.Mfp.Mass) / fluid.Mfp.SpeedSound
+	fluid.Timer.TS = fluid.Timer.TS
 }
 
 //Updates Densities associated with each particle position with Gaussian Kernel
@@ -124,18 +128,17 @@ func (fluid *SPHFluid) UpdateDensities() {
 	//Compute Density Fieldsa
 	for i := 0; i < int(FIELD); i++ {
 		//For Each Particle Calculate Kernel Based Summation
-		thisParticle := fluid.Particles[i]
 
-		colliders, nCollide, _ := fluid.SPHGridSearcher.GetParticleColliders(thisParticle, fluid.Mfp)
+		samples, nCollide, _ := fluid.SPHGrid.GetSamples(&fluid.Positions[i])
 
 		mass := fluid.Mfp.Mass
 		density := mass
 		for j := 0; j < nCollide; j++ {
-			dist := V.Length(V.Sub(thisParticle.Particle.Position, colliders[j].Particle.Position))
+			dist := V.Length(V.Sub(fluid.Positions[i], fluid.Positions[samples[j].Index]))
 			density += mass * fluid.ItrpKernel.F(dist)
 		}
 
-		thisParticle.Particle.Density = density
+		fluid.Densities[i] = density
 	}
 }
 
@@ -145,15 +148,13 @@ func (fluid *SPHFluid) DensityGradient(i int) V.Vec32 {
 
 	//For Each Particle Calculate Kernel Based Summation
 	DensityGrad := V.Vec32{}
-	thisParticle := fluid.Particles[i]
-	colliders, nCount, _ := fluid.SPHGridSearcher.GetParticleColliders(thisParticle, fluid.Mfp)
+	samples, nCount, _ := fluid.SPHGrid.GetSamples(&fluid.Positions[i])
 	mass := fluid.Mfp.Mass
-	iDensity := thisParticle.Particle.Density
+	iDensity := fluid.Densities[i]
 
 	for j := 0; j < nCount; j++ {
-		p := colliders[j].Particle
-		jDensity := p.Density
-		dir := V.Sub(p.Position, thisParticle.Particle.Position)
+		jDensity := fluid.Densities[samples[j].Index]
+		dir := V.Sub(fluid.Positions[samples[j].Index], fluid.Positions[i])
 		dist := V.Length(dir)
 		dir = V.Scale(dir, 1/dist)
 		grad := fluid.GradKernel.Grad(dist, &dir)
@@ -169,22 +170,22 @@ func (fluid *SPHFluid) DensityGradient(i int) V.Vec32 {
 func (fluid *SPHFluid) Pressure(i int) {
 
 	//For Each Particle Calculate Kernel Based Summation
-	thisParticle := fluid.Particles[i]
-	neighbors, nCount, _ := fluid.SPHGridSearcher.GetParticleColliders(thisParticle, fluid.Mfp)
+
+	samples, nCount, _ := fluid.SPHGrid.GetSamples(&fluid.Positions[i])
 	mass := fluid.Mfp.Mass
-	dens := thisParticle.Particle.Density
+	dens := fluid.Densities[i]
 	msq := mass * mass
 	F := float32(0.0)
 
 	for j := 0; j < nCount; j++ {
-		p := neighbors[j].Particle
-		jDensity := p.Density
-		dir := V.Sub(p.Position, thisParticle.Particle.Position)
+
+		jDensity := fluid.Densities[samples[j].Index]
+		dir := V.Sub(fluid.Positions[samples[j].Index], fluid.Positions[i])
 		dist := V.Length(dir)
 		dir = V.Scale(dir, 1/dist)
 		grad := fluid.GradKernel.Grad(dist, &dir)
-		F = F - (msq * ((thisParticle.Particle.Pressure / dens * dens) + (p.Pressure / jDensity * jDensity)))
-		thisParticle.Particle.ForceApply(*grad.Scale(F)) //Mutation
+		F = F - (msq * ((fluid.Pressures[i] / dens * dens) + (fluid.Pressures[samples[j].Index] / jDensity * jDensity)))
+		fluid.Forces[i].Add(*grad.Scale(F)) //Mutation
 	}
 
 }
@@ -194,24 +195,23 @@ func (fluid *SPHFluid) Pressure(i int) {
 func (fluid *SPHFluid) Viscosity(i int) {
 
 	//For Each Particle Calculate Kernel Based Summation
-	thisParticle := fluid.Particles[i]
-	neighbors, nCount, _ := fluid.SPHGridSearcher.GetParticleColliders(thisParticle, fluid.Mfp)
+
+	samples, nCount, _ := fluid.SPHGrid.GetSamples(&fluid.Positions[i])
 	mass := fluid.Mfp.Mass
 
-	iDensity := thisParticle.Particle.Density
+	iDensity := fluid.Densities[i]
 	v := 1.30 / iDensity //viscosity
-	vi := thisParticle.Particle.Velocity
+	vi := fluid.Velocities[i]
 
 	for j := 0; j < nCount; j++ {
-		p := neighbors[j].Particle
-		vj := p.Velocity
-		jDensity := p.Density
+		vj := fluid.Velocities[samples[j].Index]
+		jDensity := fluid.Densities[samples[j].Index]
 
 		coeff_vec := V.Scale(V.Sub(vj, vi), jDensity)
-		dist := thisParticle.Particle.Position.Distance(p.Position)
+		dist := fluid.Positions[i].Distance(fluid.Positions[samples[j].Index])
 		lap := fluid.GradKernel.O2D(dist)
 		force := V.Scale(coeff_vec, v*mass*lap)
-		thisParticle.Particle.ForceApply(force)
+		fluid.Forces[i].Add(force)
 	}
 
 	return
@@ -219,7 +219,7 @@ func (fluid *SPHFluid) Viscosity(i int) {
 
 //Updates particle system with accumalted External Force (I.E. Gravity)
 func (fluid *SPHFluid) External(i int, f V.Vec32) {
-	fluid.Particles[i].Particle.ForceApply(f)
+	fluid.Forces[i].Add(f)
 }
 
 //Computes Pressure From A Given Equation of State which models incompressible flow
@@ -230,30 +230,48 @@ func (fluid *SPHFluid) PressureEOS(i int, negativePressure float32) {
 	sos := fluid.Mfp.SpeedSound
 	exp := fluid.Mfp.EosExp
 	tgt := fluid.Mfp.TargetDensity
-	density := fluid.Particles[i].Particle.Density
+	density := fluid.Densities[i]
 	eosScale := tgt * float32(Math.Sqrt(float64(sos))) / exp
 	p := eosScale / exp * float32(Math.Pow(float64(tgt/density), float64(exp))-1.0)
 	if p < 0 {
 		p *= negativePressure //Negative Pressure Scaling
 	}
-	fluid.Particles[i].Particle.Pressure = p
+	fluid.Pressures[i] = p
 }
 
-func (fluid *SPHFluid) Collide(p *F.Particle) {
+//Test Particles Against Possible Mesh Collisions given a position and velocity
+func (fluid *SPHFluid) Collide(index int) {
 	//Resolve Particle Collisions
-	var normal V.Vec32
-	var collis bool
-	normal, collis = fluid.Colliders.Collision(p, fluid.Mfp.TimeStep)
+	normal, collis := fluid.Colliders.Collision(&fluid.Positions[index], &fluid.Velocities[index], fluid.Timer.TS)
 
 	if collis == true {
-		p.Collide(normal)
+		k_stiff := float32(0.85) //Restitution Coefficient. Further research req'd
+		fluid.Velocities[index].Reflect(normal)
+		fluid.Velocities[index].Scale(k_stiff)
 	}
+}
+
+//Integrates the current particle forces and updates the velocity vector.
+//Also updates the position of the particle. Clears all forces
+//Utilizes MassFluidParticle description for Time.TS modifier.
+func (fluid *SPHFluid) Update(index int) error {
+
+	//Integrates fluid force
+	fluid.Velocities[index].Add(*fluid.Forces[index].Scale(fluid.Timer.TS / fluid.Mfp.Mass))
+	//Updates Position
+	fluid.Positions[index].Add(*fluid.Velocities[index].Scale(fluid.Timer.TS))
+	//Clear Particle Force State
+	fluid.Forces[index][0] = float32(0.0)
+	fluid.Forces[index][1] = float32(0.0)
+	fluid.Forces[index][2] = float32(0.0)
+
+	return nil
 }
 
 //Main SPH fluid loop. Integrates all forces. Computes pressure from EOS and Resolves
 //Collisions. Updates particle velocity and position then clears all forces
 func (fluid *SPHFluid) Compute() {
-	FLUID := len(fluid.Particles)
+	FLUID := fluid.Count
 	GRAVITY := V.Vec32{0, GRAV, 0}
 	EXTERNAL := V.Vec32{}
 	EXTERNAL.Add(GRAVITY)
@@ -263,19 +281,17 @@ func (fluid *SPHFluid) Compute() {
 
 	//Fluid Properties
 	for i := 0; i < FLUID; i++ {
-		particle := fluid.Particles[i].Particle
-		particle.Clear()
 		fluid.PressureEOS(i, 0) //Negative Pressure Scale 0
 		fluid.Pressure(i)
 		fluid.Viscosity(i)
 		fluid.External(i, EXTERNAL)
 		//Resolve Mesh Collisions
-		fluid.Collide(particle)
+		fluid.Collide(i)
 
-		//Update Particles
-		particle.Update(*fluid.Mfp)
+		//Update Particles and resolve forces
+		fluid.Update(i)
 	}
 
-	fluid.TimeLast = fluid.Time
-	fluid.Time += fluid.TimeStep
+	fluid.Timer.StepTime()
+
 }

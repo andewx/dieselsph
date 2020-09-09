@@ -3,7 +3,6 @@ package geometry
 import (
 	"fmt"
 
-	Fluid "diesel.com/diesel/fluid"
 	Vec "diesel.com/diesel/vector"
 )
 
@@ -78,7 +77,7 @@ func (t *Triangle) Collision(P *Vec.Vec32) (float32, bool) {
 }
 
 //Given particle w/ velocity determine barycentric collisions and if a collision occurs
-func (g *Mesh) Collision(P *Fluid.Particle, dt float32) (Vec.Vec32, bool) {
+func (g *Mesh) Collision(P *Vec.Vec32, V *Vec.Vec32, dt float32) (Vec.Vec32, bool) {
 
 	collision := false
 	TRIS := len(g.Mesh)
@@ -88,12 +87,12 @@ func (g *Mesh) Collision(P *Fluid.Particle, dt float32) (Vec.Vec32, bool) {
 	//Triangle Origin and Hash the Particle Position to find the comparison bucket
 	for i := 0; i < TRIS; i++ {
 		triangle := g.Mesh[i]
-		nPos := Vec.Add(*P.GetPosition(), Vec.Scale(*P.GetVelocity(), dt))
+		nPos := Vec.Add(*P, Vec.Scale(*V, dt))
 		var dist float32
 		var bary bool
 		var ndist float32
 		var nbary bool
-		dist, bary = triangle.Collision(P.GetPosition())
+		dist, bary = triangle.Collision(P)
 		ndist, nbary = triangle.Collision(&nPos)
 
 		//Barycentric with a Sign Change

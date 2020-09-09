@@ -20,8 +20,8 @@ func TestSPH(t *testing.T) {
 
 	//Fluid Setup
 	var mfp = F.MassFluidParticle{0.01, 0.3, 0.02, 0.04, 0.05, 1500, 1, 1.4} //Particle Mass Description
-	var boxfluid = BoxFluidSystem{V.Vec32{}, 10, 10, 10, 10, 10, 10}         //Box System Description
-	var sphfluid = SPHFluid{}                                                //Main Fluid Component
+	var boxfluid = F.BoxFluidSystem{V.Vec32{}, 10, 10, 10, 10, 10, 10}       //Box System Description
+	var sphfluid = F.SPHFluid{}                                              //Main Fluid Component
 
 	sphfluid.Initialize(&boxfluid, &mfp)
 
