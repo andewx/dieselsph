@@ -37,7 +37,7 @@ func TestSPH(t *testing.T) {
 	//--------------------------
 	for !window.ShouldClose() {
 		sphfluid.Compute()
-		Draw(window, program)
+		Draw(window, program, &sphfluid)
 	}
 	//OpenGL Drawing Routine Done
 }
