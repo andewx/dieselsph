@@ -22,7 +22,7 @@ func NewMat2(v0 Vec32, v1 Vec32) *Mat2 {
 			nMat[i] = v0[i%MAT2]
 		}
 		if vecSwitch == 1 {
-			nMat[i] = v0[i%MAT2]
+			nMat[i] = v1[i%MAT2]
 		}
 
 		if i%2 == 0 {
@@ -40,15 +40,50 @@ func NewMat3(v0 Vec32, v1 Vec32, v2 Vec32) *Mat3 {
 			nMat[i] = v0[i%MAT3]
 		}
 		if vecSwitch == 1 {
-			nMat[i] = v0[i%MAT3]
+			nMat[i] = v1[i%MAT3]
 		}
 		if vecSwitch == 2 {
-			nMat[i] = v0[i%MAT3]
+			nMat[i] = v2[i%MAT3]
 		}
 		if i%3 == 0 {
 			vecSwitch++
 		}
 	}
+	return &nMat
+}
+
+func NewMat4(v0 Vec32, v1 Vec32, v2 Vec32, v3 Vec32) *Mat4 {
+	nMat := Mat4{}
+	vecSwitch := 0
+	for i := 0; i < MAT4*MAT4; i++ {
+		if vecSwitch == 0 {
+			if i < 3 {
+				nMat[i] = v0[i%MAT3]
+			}
+		}
+		if vecSwitch == 1 {
+			if i < 7 {
+				nMat[i] = v1[i%MAT3]
+			}
+		}
+		if vecSwitch == 2 {
+			if i < 11 {
+				nMat[i] = v2[i%MAT3]
+			}
+		}
+		if vecSwitch == 3 {
+			if i < 15 {
+				nMat[i] = v3[i%MAT3]
+			}
+		}
+		if i%4 == 0 {
+			vecSwitch++
+		}
+	}
+	nMat[3] = 1.0
+	nMat[7] = 1.0
+	nMat[11] = 1.0
+	nMat[15] = 1.0
 	return &nMat
 }
 
@@ -223,6 +258,20 @@ func (a *Mat4) CrossVec(b *Vec4) (*Vec4, error) {
 	}
 
 	return &r, Err
+}
+
+//Accumulates and adds in the given translation vector into the current matrix.
+func (a *Mat4) Translation(b Vec32) {
+	r := Vec4{b[0], b[1], b[2], 1.0}
+	a[3] = a[3] + r[0]
+	a[7] = a[7] + r[1]
+	a[11] = a[11] + r[2]
+	a[15] = 1.0
+}
+
+func ProjectionMatrix(l float32, r float32, t float32, b float32, n float32, f float32) *Mat4 {
+	proj := Mat4{(2 * n) / (r - l), 0, 0, 0, 0, (2 * n) / (t - b), 0, 0, (r + l) / (r - l), (t + b) / (t - b), -1 * (f + n) / (f - n), -1, 0, 0, -2 * (f * n) / (f - n), 0} //scratch a pixel projection matrix
+	return &proj
 }
 
 func (m *Mat3) Dot(b *Vec32) *Vec32 {

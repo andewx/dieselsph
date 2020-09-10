@@ -26,18 +26,19 @@ func TestSPH(t *testing.T) {
 	sphfluid.Initialize(&boxfluid, &mfp)
 
 	//Set OpenGL Windowing Context with GLFW and GO-GL Bindings
-	glWindowProperties := AppWindow{500, 500, "Diesel Particle SPH"}
+	glWindowProperties := AppWindow{1440, 800, "Diesel Particle SPH"}
+
 	runtime.LockOSThread() //OpenGL can only handle one thread context
 	window := InitGLFW(&glWindowProperties)
 	defer glfw.Terminate()
-	program := InitOpenGL(&sphfluid)
+	dieselContext := InitOpenGL(&sphfluid)
 
 	//MAIN ---------------------
 	//
 	//--------------------------
 	for !window.ShouldClose() {
 		sphfluid.Compute()
-		Draw(window, program, &sphfluid)
+		Draw(window, &sphfluid, dieselContext)
 	}
 	//OpenGL Drawing Routine Done
 }
