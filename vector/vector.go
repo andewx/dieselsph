@@ -191,7 +191,7 @@ func (v *Vec32) equals(a Vec32) bool {
 	return false
 }
 
-func vecEquals(v Vec32, a Vec32) bool {
+func VecEquals(v Vec32, a Vec32) bool {
 	if v[0] == a[0] && v[1] == a[1] && v[2] == a[2] {
 		return true
 	}

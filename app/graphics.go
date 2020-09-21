@@ -3,9 +3,10 @@ package app
 //OpenGL Windowing Calls and Structs
 import (
 	F "diesel.com/diesel/fluid"
+	U "diesel.com/diesel/utils"
 	V "diesel.com/diesel/vector"
 	"fmt"
-	"github.com/go-gl/gl/v4.1-core/gl" //go does some @latest found weird shit. If fixed go back to v4.1-core. Clean modcache if this doesn't wor
+	"github.com/go-gl/gl/v4.1-core/gl" //go does some@latest found weird shit. If fixed go back to v4.1-core. Clean modcache if this doesn't wor
 	"github.com/go-gl/glfw/v3.2/glfw"
 	"io/ioutil"
 	"log"
@@ -102,7 +103,7 @@ func InitOpenGL(sph *F.SPHFluid) *DieselContext {
 	gl.LinkProgram(prog)
 
 	//Generate Diesel Context which includes cameras an stuff
-	n := float32(1.1)
+	n := float32(1.3)
 	f := float32(100.0)
 	r := float32(20.0)
 	l := float32(-20.0)
@@ -145,8 +146,10 @@ func Draw(window *glfw.Window, sph *F.SPHFluid, dsl *DieselContext) {
 	GlobalTrans[2] *= 0
 	//Clear out translation Vector for smoothness
 	if dsl.Frames%100 == 0 {
-		gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])                         //Just use pointer arithmetic i guess
-		gl.MapBufferRange(gl.ARRAY_BUFFER, 0, sph.Count, gl.MAP_WRITE_BIT) //
+		gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])                                   //Just use pointer arithmetic i guess
+		mapPtr := gl.MapBufferRange(gl.ARRAY_BUFFER, 0, sph.Count, gl.MAP_WRITE_BIT) //
+		//Utility Mapping
+		U.TransferPositionData(mapPtr, sph.Positions, sph.Count-1)
 		gl.UnmapBuffer(gl.ARRAY_BUFFER)
 
 	}
