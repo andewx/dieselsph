@@ -95,7 +95,7 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle) 
 	fluid.Pressures = make([]float32, fluid.Count)
 	fluid.Densities = make([]float32, fluid.Count)
 	fluid.Forces = make([]V.Vec32, fluid.Count)
-	fluid.SPHGrid = AllocateGridUserDefined(init.Width, init.WidthCells) //SPH Loses a degree of Dimensionality 3d->2d
+	fluid.SPHGrid = AllocateGridUserDefined(init.Width, 7) //SPH Loses a degree of Dimensionality 3d->2d
 
 	//Initialize Particle Positions and Stuff
 	for i := 0; i < init.WidthCells; i++ {
@@ -118,8 +118,7 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle) 
 	//Create Collider Mesh Box From List of triangles (12)
 	fluid.UpdateDensities()
 	//Time step dependent on propogation of particle collisions
-	fluid.Timer.TS = (fluid.Mfp.OuterRadius * fluid.Mfp.Mass) / fluid.Mfp.SpeedSound
-	fluid.Timer.TS = fluid.Timer.TS
+	fluid.Timer.TS = 0.1 //(fluid.Mfp.OuterRadius * fluid.Mfp.Mass) / fluid.Mfp.SpeedSound
 }
 
 //Updates Densities associated with each particle position with Gaussian Kernel

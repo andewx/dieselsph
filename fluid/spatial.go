@@ -7,15 +7,15 @@ import (
 
 const NEIGHBORS = 7
 const COLLIDER_SAMPLES = 10
-const PARTICLE_SAMPLES = 20
+const PARTICLE_SAMPLES = 40
 
 //Spatial Hash Grid - Stores a Grid of IDNode entry point locations with a simple spatial hash
 //See Hash Function Below (float32:Scale - Width of the data structure determines how much wrapping / int:Subiv how many times that width is divided for the lenght depth width of the cube)
 type SpatialHashGrid struct {
 	//V Valued Attributes Affect the Mapping Function and May be updated
-	Scale  float32      //Scale positional wrapping
-	Subdiv int          //Subdiv of the Grid
-	Grid   [][][]IDNode //Chained Grid mapping Hash V
+	Scale  float32       //Scale positional wrapping
+	Subdiv int           //Subdiv of the Grid
+	Grid   [][][]*IDNode //Chained Grid mapping Hash V
 }
 
 //-----------------------Utility Structs--------------------------------//
@@ -29,6 +29,7 @@ type IDNode struct {
 //ID Node Iterator seeks and steps through node chains. We do not include Pre-Post processing
 type IDNodeIter struct {
 	P       *IDNode
+	Prev    *IDNode
 	currIdx int
 }
 
@@ -40,12 +41,12 @@ type NeighborGrid [7][3]int
 //AllocateGrid - Allocates default Grid. 20 x 20 x 20 -- 15,625 Grid Locations
 //Radial domain of 1.0 centered about origin (-10, 10) on all axis
 func AllocateGrid() *SpatialHashGrid {
-	sphGrid := SpatialHashGrid{1.0, 20, make([][][]IDNode, 20)}
+	sphGrid := SpatialHashGrid{20, 20, make([][][]*IDNode, 20)}
 	//Initialize Dimensional Grid
 	for i := 0; i < sphGrid.Subdiv; i++ {
-		sphGrid.Grid[i] = make([][]IDNode, sphGrid.Subdiv)
-		for k := 0; k < sphGrid.Subdiv; k++ {
-			sphGrid.Grid[i][k] = make([]IDNode, sphGrid.Subdiv)
+		sphGrid.Grid[i] = make([][]*IDNode, sphGrid.Subdiv)
+		for j := 0; j < sphGrid.Subdiv; j++ {
+			sphGrid.Grid[i][j] = make([]*IDNode, sphGrid.Subdiv)
 		}
 	}
 
@@ -112,21 +113,27 @@ func (shg *SpatialHashGrid) GetNeighborGrid(node [3]int) (*NeighborGrid, error) 
 //The beauty here is that we can just sample any position easily
 func (shg *SpatialHashGrid) GetSamples(position *V.Vec32) ([]IDNode, int, error) {
 	head := shg.Hash(position)
-	neighbors, _ := shg.GetNeighborGrid(head)
-	samples := make([]IDNode, PARTICLE_SAMPLES) //Currently Set at 20
+	neighbors, _ := shg.GetNeighborGrid(*head)
+	samples := make([]IDNode, PARTICLE_SAMPLES) //Currently Set at 40
 	count := 0
 
 	//Iterate through the Neigbors grid lists and append IDs as they are found
 	for i := 0; i < NEIGHBORS; i++ {
-		PNode := shg.getHash(neighbors[i]) //Neighbors actually searchits own first index first
-		if PNode != nil {
-			PNodeIter := NewIter(*PNode)
-			for PNodeIter.Next() {
-				samples[count] = *PNodeIter.P
-				count++
+		PNode, err := shg.getHash(neighbors[i]) //Neighbors actually searchits own first index first
+
+		if err != nil {
+			//Ignore Error For Now But We are getting a repeated [-1,-1,-1] Index from gethash
+		} else {
+			if PNode != nil {
+				PNodeIter := NewIter(*PNode)
+				for PNodeIter.Next() {
+					samples[count] = *PNodeIter.P
+					count++
+				}
 			}
 		}
-	}
+	} //End loop
+
 	return samples, count, nil
 }
 
@@ -141,12 +148,12 @@ func copyIndexes(index [3]int, cpyIndex [3]int) error {
 //Creates a custom storage Grid cube with specified int:Scale wrapping domains and  int:dim specifying  subdivisions in the  cube
 func AllocateGridUserDefined(Scale float32, dim int) *SpatialHashGrid {
 
-	sphGrid := SpatialHashGrid{Scale, dim, make([][][]IDNode, dim)}
+	sphGrid := SpatialHashGrid{Scale, dim, make([][][]*IDNode, dim)}
 	//Initialize Dimensional Grid
-	for i := 0; i < sphGrid.Subdiv; i++ {
-		sphGrid.Grid[i] = make([][]IDNode, sphGrid.Subdiv)
-		for k := 0; k < sphGrid.Subdiv; k++ {
-			sphGrid.Grid[i][k] = make([]IDNode, sphGrid.Subdiv)
+	for i := 0; i < dim; i++ {
+		sphGrid.Grid[i] = make([][]*IDNode, dim)
+		for j := 0; j < sphGrid.Subdiv; j++ {
+			sphGrid.Grid[i][j] = make([]*IDNode, sphGrid.Subdiv)
 		}
 	}
 
@@ -155,14 +162,14 @@ func AllocateGridUserDefined(Scale float32, dim int) *SpatialHashGrid {
 
 //Returns Spatial Hash Index where index Range{0, N*N*N}
 //Modulus of Subdiv retains Locality Clustering
-func (s *SpatialHashGrid) Hash(p *V.Vec32) [3]int {
-	vecPos := V.Scale(V.Abs(*p), 1/s.Scale) //Scale By Resolution
-	idx := [3]int{0, 0, 0}
+func (s *SpatialHashGrid) Hash(p *V.Vec32) *[3]int {
 	d := s.Subdiv
-	idx[0] = int(vecPos[0]) % d
-	idx[1] = int(vecPos[1]) % d
-	idx[2] = int(vecPos[1]) % d
-	return idx
+	vecPos := V.Scale(V.Abs(*p), s.Scale*s.Scale) //Need to make this homogenous based on the input vector and grid dimension
+	q := int(vecPos[0]) % d
+	r := int(vecPos[1]) % d
+	x := int(vecPos[2]) % d
+	idx := [3]int{q, r, x}
+	return &idx
 }
 
 //Loads particle grid with particle system positional data by Inserting nodes Based
@@ -179,8 +186,13 @@ func (s *SpatialHashGrid) Load(Positions []V.Vec32) error {
 	return nil
 }
 
-func (s *SpatialHashGrid) getHash(idx [3]int) *IDNode {
-	return &s.Grid[idx[0]][idx[1]][idx[2]]
+func (s *SpatialHashGrid) getHash(idx [3]int) (*IDNode, error) {
+	//Sanitize indexes
+	if idx[0] < 0 || idx[0] > s.Subdiv-1 || idx[1] < 0 || idx[1] > s.Subdiv-1 || idx[2] < 0 || idx[2] > s.Subdiv-1 {
+		err := fmt.Errorf("Error Spatial Hash Index Out of Bounds: %d %d %d", idx[0], idx[1], idx[2])
+		return nil, err
+	}
+	return s.Grid[idx[0]][idx[1]][idx[2]], nil
 }
 
 //Finds particle by its index location and position. This typically wont conern us with fluids
@@ -189,12 +201,12 @@ func (s *SpatialHashGrid) findNode(index int, pos *V.Vec32) error {
 
 	//Setup Node Iterator with a Grid Index
 	sphPosition := s.Hash(pos)
-	sphNode := s.getHash(sphPosition)
+	sphNode, err := s.getHash(*sphPosition)
 	found := false
 	iter := NewIter(*sphNode)
 
-	if sphNode == nil {
-		return fmt.Errorf("Particle Index wasn't found in grid location")
+	if err != nil {
+		return err
 	}
 
 	//Particle front of Grid
@@ -217,19 +229,24 @@ func (s *SpatialHashGrid) findNode(index int, pos *V.Vec32) error {
 }
 
 //Inserts a IDNode into the Spatial Hash Grid based on a given position. Index with that position is stored in the tree.
+//Just makes this latest hash the front of the the queue and links to end node. End Node has nil link. Return previous Nodes only.
 func (s *SpatialHashGrid) InsertNode(pos *V.Vec32, index int) error {
-
 	gIdx := s.Hash(pos)
-	currNode := s.getHash(gIdx)
+	currNode, err := s.getHash(*gIdx)
+
+	if err != nil {
+		return err
+	}
 
 	if currNode == nil {
-		s.Grid[gIdx[0]][gIdx[1]][gIdx[2]] = IDNode{index, nil}
-		return nil //End InsertNode
+		newNode := IDNode{index, nil}
+		s.Grid[gIdx[0]][gIdx[1]][gIdx[2]] = &newNode
+	} else {
+		newNode := IDNode{index, currNode}
+		newNode.Link = currNode
+		s.Grid[gIdx[0]][gIdx[1]][gIdx[2]] = &newNode
 	}
-	data := IDNode{index, nil}
-	//Inserts Node In Beginning of List
-	iter := NewIter(*currNode)
-	return iter.Insert(data)
+	return nil
 }
 
 //Inserts the node into the current node tree.Inserts and updates links
@@ -237,7 +254,7 @@ func (p *IDNodeIter) Insert(nextNode IDNode) error {
 	//Make sure Particle Node Address Isn't Referenced
 	tmpNode := p.P.Link
 	p.P.Link = &nextNode
-	p.P.Link = tmpNode
+	nextNode.Link = tmpNode
 	return nil
 }
 
@@ -248,15 +265,15 @@ func NewIter(node IDNode) IDNodeIter {
 }
 
 func (p *IDNodeIter) Value() int {
-	if p.P == nil {
-		panic("Particle Node Iterator - Particle Is Nil")
+	if p.P == nil || p.P.Index == -1 {
+		panic("Return Previous Node This is a Abstract Header")
 	}
 	return p.P.Index
 }
 
 //Advances to next stored node - if node was not found this is reported in the error context
 func (p *IDNodeIter) Next() bool {
-	if p.P.Link != nil {
+	if p.P != nil && p.P.Link != nil {
 		p.P = p.P.Link
 		p.currIdx++
 		return true

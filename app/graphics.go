@@ -5,7 +5,7 @@ import (
 	F "diesel.com/diesel/fluid"
 	V "diesel.com/diesel/vector"
 	"fmt"
-	"github.com/go-gl/gl/v4.1-core/gl" //go does some @latest found weird shit. If fixed go back to v4.1-core. Clean modcache if this doesn't work
+	"github.com/go-gl/gl/v4.1-core/gl" //go does some @latest found weird shit. If fixed go back to v4.1-core. Clean modcache if this doesn't wor
 	"github.com/go-gl/glfw/v3.2/glfw"
 	"io/ioutil"
 	"log"
@@ -22,6 +22,7 @@ type Camera struct {
 	Pos   V.Vec32
 	Front V.Vec32
 	Up    V.Vec32
+	Info  string
 }
 
 type DieselContext struct {
@@ -35,7 +36,20 @@ type DieselContext struct {
 	ModelShaderLoc int32
 	ViewShaderLoc  int32
 	ProjShaderLoc  int32
+	Frames         int32
 }
+
+//Global Pointers :)))))))))))))) - Debugger Apparently Can't Handle This
+var GlobalTrans *V.Vec32
+var GlobalCamera *Camera
+
+var (
+	triangle = []float32{
+		0, 0.5, 0, // top
+		-0.5, -0.5, 0, // left
+		0.5, -0.5, 0, // right
+	}
+)
 
 // initGlfw initializes glfw and returns a Window to use.
 func InitGLFW(a *AppWindow) *glfw.Window {
@@ -52,6 +66,7 @@ func InitGLFW(a *AppWindow) *glfw.Window {
 	window, err := glfw.CreateWindow(a.Width, a.Height, a.Name, nil, nil)
 	checkError(err)
 	window.MakeContextCurrent()
+	window.SetKeyCallback(ProcessInput)
 
 	return window
 }
@@ -87,69 +102,88 @@ func InitOpenGL(sph *F.SPHFluid) *DieselContext {
 	gl.LinkProgram(prog)
 
 	//Generate Diesel Context which includes cameras an stuff
-	n := float32(-1.0)
-	f := float32(-20.0)
+	n := float32(1.1)
+	f := float32(100.0)
 	r := float32(20.0)
 	l := float32(-20.0)
 	t := float32(10.0)
 	b := float32(-10.0)
 
-	newCamera := Camera{V.Vec32{0, 0, 10.0}, V.Vec32{0, 0.0, -1.0}, V.Vec32{0, 1.0, 0}}
-	model := V.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1} //identiy
-	view := V.NewMat4(newCamera.Pos, newCamera.Front, newCamera.Up, V.Vec32{1.0, 1.0, 1.0})
+	GlobalCamera = &Camera{V.Vec32{0, 0, 0}, V.Vec32{0, 0.0, 1.0}, V.Vec32{0, 1.0, 0}, "hi im a camera"}
+	GlobalTrans = &V.Vec32{0, 0, 0}
+	model := V.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1} //identity
+	view := V.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}
 	proj := V.ProjectionMatrix(l, r, t, b, n, f)
 	dslContext := DieselContext{}
-	dslContext.Cam = &newCamera
+	dslContext.Cam = GlobalCamera
 	dslContext.Model = &model
-	dslContext.View = view
-	dslContext.Proj = proj
+	dslContext.View = &view
+	dslContext.Proj = &proj
 	dslContext.PrgID = prog
-
 	//have to fucking wrangle a utf-8 out of a string again
-	dslContext.ModelShaderLoc = gl.GetUniformLocation(prog, StringToUTF8("model"))
-	dslContext.ViewShaderLoc = gl.GetUniformLocation(prog, StringToUTF8("view"))
-	dslContext.ProjShaderLoc = gl.GetUniformLocation(prog, StringToUTF8("proj"))
-
+	dslContext.ModelShaderLoc = gl.GetUniformLocation(prog, gl.Str("model\x00"))
+	dslContext.ViewShaderLoc = gl.GetUniformLocation(prog, gl.Str("view\x00"))
+	dslContext.ProjShaderLoc = gl.GetUniformLocation(prog, gl.Str("projection\x00"))
 	//View/World matrix
 
 	//VBO/VAO handle
-	gl.GenBuffers(2, &dslContext.VBO[0])
-	gl.GenVertexArrays(1, &dslContext.VAO)
-	gl.BindVertexArray(dslContext.VAO)
 
+	MakeVAO(sph, &dslContext)
+	fmt.Printf("Lets do this : )\n")
 	//Pass uint32
 	return &dslContext
 }
 
-func StringToUTF8(str string) *uint8 {
-	var ptr *uint8
-	conv := []uint8(str)
-	ptr = &conv[0]
-	return ptr
-}
+func Draw(window *glfw.Window, sph *F.SPHFluid, dsl *DieselContext) {
 
-func Draw(window *glfw.Window, FluidScene *F.SPHFluid, dslContext *DieselContext) {
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-	gl.UseProgram(dslContext.PrgID)
+	gl.UseProgram(dsl.PrgID)
 	//Set uniforms
-	gl.UniformMatrix4fv(dslContext.ModelShaderLoc, 1, false, &dslContext.Model[0])
-	gl.UniformMatrix4fv(dslContext.ViewShaderLoc, 1, false, &dslContext.View[0])
-	gl.UniformMatrix4fv(dslContext.ProjShaderLoc, 1, false, &dslContext.Proj[0])
+	dsl.View.Translation(GlobalTrans) //Should accumulate Translationinto the View Matrix
+	GlobalTrans[0] *= 0
+	GlobalTrans[1] *= 0
+	GlobalTrans[2] *= 0
+	//Clear out translation Vector for smoothness
+	if dsl.Frames%100 == 0 {
+		gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])                         //Just use pointer arithmetic i guess
+		gl.MapBufferRange(gl.ARRAY_BUFFER, 0, sph.Count, gl.MAP_WRITE_BIT) //
+		gl.UnmapBuffer(gl.ARRAY_BUFFER)
 
-	MakeVAO(FluidScene, dslContext)
-	gl.PointSize(20.0)
-	gl.BindVertexArray(dslContext.VAO)
-	gl.DrawArrays(gl.POINTS, 0, int32(FluidScene.Count))
+	}
+
+	gl.UniformMatrix4fv(dsl.ModelShaderLoc, 1, false, &dsl.Model[0])
+	gl.UniformMatrix4fv(dsl.ViewShaderLoc, 1, false, &dsl.View[0])
+	gl.UniformMatrix4fv(dsl.ProjShaderLoc, 1, false, &dsl.Proj[0])
+
+	gl.PointSize(5.0)
+	gl.BindVertexArray(dsl.VAO)
+	gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])
+	gl.DrawArrays(gl.POINTS, 0, int32(sph.Count)*3)
 	glfw.PollEvents()
 	window.SwapBuffers()
+
 }
 
-//Refreshes VBO object with positional data
+//Refreshes VBO object with positional da
 func MakeVAO(sph *F.SPHFluid, dsl *DieselContext) {
+
+	gl.GenBuffers(2, &dsl.VBO[0])
+	gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])                                                  //Just use pointer arithmetic i guess
+	gl.BufferData(gl.ARRAY_BUFFER, sph.Count*4*3, gl.Ptr(&sph.Positions[0][0]), gl.STREAM_DRAW) //float 32 (4 bytes)
 	gl.EnableVertexAttribArray(0)
-	gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])                                         //Just use pointer arithmetic i guess
-	gl.BufferData(gl.ARRAY_BUFFER, sph.Count*4, gl.Ptr(sph.Positions), gl.STATIC_DRAW) //float 32 (4 bytes)
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 0, nil)                              /* Coord data VBO[0], 3 Verts per coord */
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 0, nil)
+	/* Coord data VBO[0], 3 Verts per coord */
+	/*
+		gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[1])
+		gl.BufferData(gl.ARRAY_BUFFER, 4*len(triangle), gl.Ptr(triangle), gl.STATIC_DRAW)
+		gl.EnableVertexAttribArray(0)
+		gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 0, nil)
+	*/
+
+	gl.GenVertexArrays(1, &dsl.VAO)
+	gl.BindVertexArray(dsl.VAO)
+	gl.EnableVertexAttribArray(0)
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 0, nil)
 }
 
 func checkError(err error) {
@@ -181,20 +215,27 @@ func compileShader(source string, shaderType uint32) (uint32, error) {
 	return shader, nil
 }
 
-/*
-func processInput(dsl *DieselContext) {
-	cameraSpeed := 0.05 // adjust accordingly
-	if glfw.GetKeyName(glfw.KEYW) == glfw.Press {
-		dsl.Cam.Pos.Add(dsl.Cam.Front.Scale(cameraSpeed))
+func ProcessInput(w *glfw.Window, key glfw.Key, scancode int, action glfw.Action, mods glfw.ModifierKey) {
+	cameraSpeed := float32(0.5) // adjust accordingly
+	if key == glfw.KeyW {
+		//Accumulates the translation Vector
+		p := V.Vec32{0.0, 0.0, -1.0}
+		GlobalTrans.Add(*p.Scale(cameraSpeed))
 	}
-	if glfw.GetKeyName(glfw.KEYS) == glfw.Press {
-		dsl.Cam.Pos.Add(dsl.Cam.Front.Scale(-cameraSpeed))
+	if key == glfw.KeyS {
+		//Accumulates the translation Vector
+		p := V.Vec32{0.0, 0.0, 1.0}
+		GlobalTrans.Add(*p.Scale(cameraSpeed))
 	}
-	if glfw.GetKeyName(glfw.KeyA) == glfw.Press {
-		dsl.Cam.Pos.Add(V.Cross(dsl.Cam.Front, dsl.Cam.Up).Scale(cameraSpeed))
+	if key == glfw.KeyA {
+		//Accumulates the translation Vector
+		//Accumulates the translation Vector
+		p := V.Vec32{-1.0, 0.0, 0.0}
+		GlobalTrans.Add(*p.Scale(cameraSpeed))
 	}
-	if glfw.GetKeyName(glfw.KeyD) == glfw.Press {
-		dsl.Cam.Pos.Add(V.Cross(dsl.Cam.Front, dsl.Cam.Up).Scale(-cameraSpeed))
+	if key == glfw.KeyD {
+		//Accumulates the translation Vector
+		p := V.Vec32{1.0, 0.0, 0.0}
+		GlobalTrans.Add(*p.Scale(cameraSpeed))
 	}
 }
-*/

@@ -1,8 +1,6 @@
 package geometry
 
 import (
-	"fmt"
-
 	Vec "diesel.com/diesel/vector"
 )
 
@@ -131,7 +129,6 @@ func (tri *Triangle) Barycentric(p *Vec.Vec32) (*Vec.Vec2, float32, bool) {
 	//Project our Point Into the Triangle // Then Project into the XY Plane
 	ProjTriangle := T.Project(XY)
 	P := Vec.ProjPlane(P1, XY)
-	fmt.Println("Point XY Plane Projection Coords: " + P.String())
 	DISTANCE := P1.Sub(*p).Length()
 	//Now Project All Points into the XZ Plane (XY?) to give cartesian Coordinates
 	AP := ProjTriangle.Verts[0]
@@ -152,7 +149,6 @@ func (tri *Triangle) Barycentric(p *Vec.Vec32) (*Vec.Vec2, float32, bool) {
 	DVec := Vec.Vec2{R[0], R[1]}
 	//Mat 3x 3 Inverse Calcula
 	Inv, _ := Mat2.Inverse()
-	fmt.Println(Inv.String())
 	//  fmt.Printf(Inv.String())
 	RVec, _ := Inv.CrossVec(&DVec)
 	bRes := false

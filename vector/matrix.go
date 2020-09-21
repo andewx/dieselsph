@@ -261,17 +261,32 @@ func (a *Mat4) CrossVec(b *Vec4) (*Vec4, error) {
 }
 
 //Accumulates and adds in the given translation vector into the current matrix.
-func (a *Mat4) Translation(b Vec32) {
-	r := Vec4{b[0], b[1], b[2], 1.0}
-	a[3] = a[3] + r[0]
-	a[7] = a[7] + r[1]
-	a[11] = a[11] + r[2]
+func (a *Mat4) Translation(b *Vec32) {
+
+	a[12] = a[12] + b[0]
+	a[13] = a[13] + b[1]
+	a[14] = a[14] + b[2]
 	a[15] = 1.0
+
 }
 
-func ProjectionMatrix(l float32, r float32, t float32, b float32, n float32, f float32) *Mat4 {
-	proj := Mat4{(2 * n) / (r - l), 0, 0, 0, 0, (2 * n) / (t - b), 0, 0, (r + l) / (r - l), (t + b) / (t - b), -1 * (f + n) / (f - n), -1, 0, 0, -2 * (f * n) / (f - n), 0} //scratch a pixel projection matrix
-	return &proj
+func (a *Mat4) Transpose() *Mat4 {
+	for i := 0; i < MAT4; i++ {
+		for j := 0; j < MAT4; j++ {
+			id1 := i*MAT4 + j
+			id2 := j*MAT4 + i
+			tmp := a[id1]
+			a[id1] = a[id2]
+			a[id2] = tmp
+		}
+	}
+	return a
+}
+
+//Matrix Must be in column major order for OpenGL
+func ProjectionMatrix(l float32, r float32, t float32, b float32, n float32, f float32) Mat4 {
+	proj := Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, (-f / (f - n)), (-f * n) / (f - n), 0, 0, -1, 0} //scratch a pixel projection matrix
+	return proj
 }
 
 func (m *Mat3) Dot(b *Vec32) *Vec32 {
