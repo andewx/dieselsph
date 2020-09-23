@@ -1,10 +1,9 @@
 package geometry
 
 import (
+	"diesel.com/diesel/vector"
 	"fmt"
 	"testing"
-
-	"diesel.com/diesel/vector"
 )
 
 //Intuitive Geometry Coordinate Tests
@@ -14,11 +13,7 @@ func TestGeometry(t *testing.T) {
 	V2 := vector.Vec32{-1, 1, -1}
 	P1 := vector.Vec32{-0.5, 0, -0.5}
 
-	tTriangle := Triangle{}
-	tTriangle.Verts[0] = &V0
-	tTriangle.Verts[1] = &V1
-	tTriangle.Verts[2] = &V2
-
+	tTriangle := InitTriangle(V0, V1, V2)
 	//Return Collision and result between each of the three points
 	fmt.Printf("Testing Triangle Collisions\n")
 
@@ -31,5 +26,9 @@ func TestGeometry(t *testing.T) {
 	} else {
 		fmt.Printf("Barycentric Coordinates:%s\nDistance %f\n", coords1.String(), dist1)
 	}
+
+	Mesh := Box(5, 5, 5, vector.Vec32{})
+
+	Mesh.Vertexes[0][0] = 0
 
 }

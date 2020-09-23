@@ -8,7 +8,7 @@ import (
 //Describes Vector Construct and Vector Interface
 //Note that this interface will be move to cope with SIMD vectors
 
-//All function immutable unless its a method. Method postfix_ defines a immutable method
+//All function immutable unless its a method. Method postfix_ defines a immutable meth
 type Vec interface {
 	Abs() Vec
 	Dot(b Vec) float32
@@ -99,14 +99,20 @@ func Sub(v Vec32, b Vec32) Vec32 {
 	return Vec32{v[0] - b[0], v[1] - b[1], v[2] - b[2]}
 }
 
-//Add - Non Mutable
+//Add - Mutate
 func (v *Vec32) Add(b Vec32) *Vec32 {
-	return &Vec32{v[0] + b[0], v[1] + b[1], v[2] + b[2]}
+	v[0] = v[0] + b[0]
+	v[1] = v[1] + b[1]
+	v[2] = v[2] + b[2]
+	return v
 }
 
 //Add - Scales vector bY scalar a
 func (v *Vec32) Sub(b Vec32) *Vec32 {
-	return &Vec32{v[0] - b[0], v[1] - b[1], v[2] - b[2]}
+	v[0] = v[0] - b[0]
+	v[1] = v[1] - b[1]
+	v[2] = v[2] - b[2]
+	return v
 }
 
 //Cross Product
@@ -185,7 +191,7 @@ func (v *Vec32) equals(a Vec32) bool {
 	return false
 }
 
-func vecEquals(v Vec32, a Vec32) bool {
+func VecEquals(v Vec32, a Vec32) bool {
 	if v[0] == a[0] && v[1] == a[1] && v[2] == a[2] {
 		return true
 	}

@@ -12,7 +12,7 @@ func TestVecAdd(t *testing.T) {
 	var y = Vec32{1, 1, 1}
 	var eq = Vec32{2, 2, 2}
 
-	if vecEquals(*x.Add(y), eq) {
+	if VecEquals(*x.Add(y), eq) {
 
 	} else {
 		t.Errorf("Vector Addition failed %f", x[0])
@@ -57,10 +57,10 @@ func TestVector(t *testing.T) {
 		t.Error()
 	}
 
-	if !vecEquals(Scale(a, 2.0), Vec32{4.0, 4.0, 4.0}) {
+	if !VecEquals(Scale(a, 2.0), Vec32{4.0, 4.0, 4.0}) {
 		t.Error()
 	}
-	if !vecEquals(Add(a, Vec32{2.0, 2.0, 2.0}), Vec32{4.0, 4.0, 4.0}) {
+	if !VecEquals(Add(a, Vec32{2.0, 2.0, 2.0}), Vec32{4.0, 4.0, 4.0}) {
 		t.Error()
 	}
 
@@ -68,7 +68,7 @@ func TestVector(t *testing.T) {
 		t.Errorf("Normalized vector error: A Length(): %f, %f, %f", x[0], x[1], x[2])
 	}
 
-	if !vecEquals(Cross(Vec32{-2, -2, -2}, Vec32{1, 2, 1}), Vec32{2, 0, -2}) {
+	if !VecEquals(Cross(Vec32{-2, -2, -2}, Vec32{1, 2, 1}), Vec32{2, 0, -2}) {
 		r := Cross(Vec32{-2, -2, -2}, Vec32{1, 2, 1})
 		t.Errorf("Cross %f,%f,%f", r[0], r[1], r[2])
 	}
@@ -88,22 +88,22 @@ func TestVector(t *testing.T) {
 	r := Proj(a, p)
 	h := ProjPlane(a, p)
 
-	if !vecEquals(r, Vec32{0, 2, 0}) {
+	if !VecEquals(r, Vec32{0, 2, 0}) {
 		t.Errorf("Error Projection %f %f %f", r[0], r[1], r[2])
 	}
 
-	if !vecEquals(h, Vec32{2, 0, 0}) {
+	if !VecEquals(h, Vec32{2, 0, 0}) {
 		t.Errorf("Error Proj Plane  %f %f %f", h[0], h[1], h[2])
 	}
 
-	if !vecEquals(*a.Proj(p), Vec32{0, 2, 0}) {
+	if !VecEquals(*a.Proj(p), Vec32{0, 2, 0}) {
 		t.Errorf("Error Projection %f, %f, %f", a[0], a[1], a[2])
 	}
 
 	p = Vec32{1, -1, 0}
 	o := Vec32{0, 1, 0}
 
-	if !vecEquals(*p.Reflect(o), Vec32{1, 1, 0}) {
+	if !VecEquals(*p.Reflect(o), Vec32{1, 1, 0}) {
 		t.Errorf("Error Reflection %f, %f, %f", p[0], p[1], p[2])
 	}
 

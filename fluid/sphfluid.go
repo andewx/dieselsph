@@ -95,7 +95,9 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle) 
 	fluid.Pressures = make([]float32, fluid.Count)
 	fluid.Densities = make([]float32, fluid.Count)
 	fluid.Forces = make([]V.Vec32, fluid.Count)
-	fluid.SPHGrid = AllocateGridUserDefined(init.Width, init.WidthCells) //SPH Loses a degree of Dimensionality 3d->2d
+
+	//Spatial Acceleration Grid -- We're having an issue with the spatial hashing modulus due to rounding modulus error
+	fluid.SPHGrid = AllocateGridUserDefined(init.Width, 7) //Constructs a cubic grid the 7 constant needs to be change
 
 	//Initialize Particle Positions and Stuff
 	for i := 0; i < init.WidthCells; i++ {
@@ -104,22 +106,21 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle) 
 				if32 := float32(i)
 				jf32 := float32(j)
 				kf32 := float32(k)
-				nPos := V.Vec32{float32(minW + wStep*if32), float32(minH + hStep*jf32), float32(minD + dStep*kf32)}
+				nPos := V.Vec32{float32(minW + wStep*if32), float32(minH + hStep*jf32), float32(minD + dStep*kf32)} //removed wStep , dSteh, hStep
 				index := i*init.WidthCells*init.HeightCells + int(j*init.HeightCells) + int(k)
 				fluid.Positions[index] = nPos
 			}
 		}
 	} //End Particle Init
 
-	fluid.Colliders = G.Box(10.0, 10.0, 10.0, V.Vec32{}) //Initialize Collider Box
+	fluid.Colliders = G.Box(init.Width, init.Height, init.Depth, init.Origin) //Initialize Collider Box
 
 	//Allocates Particles to Spatial Hash Grid
 	fluid.SPHGrid.Load(fluid.Positions)
 	//Create Collider Mesh Box From List of triangles (12)
 	fluid.UpdateDensities()
 	//Time step dependent on propogation of particle collisions
-	fluid.Timer.TS = (fluid.Mfp.OuterRadius * fluid.Mfp.Mass) / fluid.Mfp.SpeedSound
-	fluid.Timer.TS = fluid.Timer.TS
+	fluid.Timer.TS = 0.01 //(fluid.Mfp.InnerRadius * 0.4) / (fluid.Mfp.SpeedSound) //Time Step Per Iteration
 }
 
 //Updates Densities associated with each particle position with Gaussian Kernel
@@ -259,7 +260,10 @@ func (fluid *SPHFluid) Update(index int) error {
 	//Integrates fluid force
 	fluid.Velocities[index].Add(*fluid.Forces[index].Scale(fluid.Timer.TS / fluid.Mfp.Mass))
 	//Updates Position
+	///TestSPH
+
 	fluid.Positions[index].Add(*fluid.Velocities[index].Scale(fluid.Timer.TS))
+
 	//Clear Particle Force State
 	fluid.Forces[index][0] = float32(0.0)
 	fluid.Forces[index][1] = float32(0.0)

@@ -22,7 +22,7 @@ func NewMat2(v0 Vec32, v1 Vec32) *Mat2 {
 			nMat[i] = v0[i%MAT2]
 		}
 		if vecSwitch == 1 {
-			nMat[i] = v0[i%MAT2]
+			nMat[i] = v1[i%MAT2]
 		}
 
 		if i%2 == 0 {
@@ -40,15 +40,50 @@ func NewMat3(v0 Vec32, v1 Vec32, v2 Vec32) *Mat3 {
 			nMat[i] = v0[i%MAT3]
 		}
 		if vecSwitch == 1 {
-			nMat[i] = v0[i%MAT3]
+			nMat[i] = v1[i%MAT3]
 		}
 		if vecSwitch == 2 {
-			nMat[i] = v0[i%MAT3]
+			nMat[i] = v2[i%MAT3]
 		}
 		if i%3 == 0 {
 			vecSwitch++
 		}
 	}
+	return &nMat
+}
+
+func NewMat4(v0 Vec32, v1 Vec32, v2 Vec32, v3 Vec32) *Mat4 {
+	nMat := Mat4{}
+	vecSwitch := 0
+	for i := 0; i < MAT4*MAT4; i++ {
+		if vecSwitch == 0 {
+			if i < 3 {
+				nMat[i] = v0[i%MAT3]
+			}
+		}
+		if vecSwitch == 1 {
+			if i < 7 {
+				nMat[i] = v1[i%MAT3]
+			}
+		}
+		if vecSwitch == 2 {
+			if i < 11 {
+				nMat[i] = v2[i%MAT3]
+			}
+		}
+		if vecSwitch == 3 {
+			if i < 15 {
+				nMat[i] = v3[i%MAT3]
+			}
+		}
+		if i%4 == 0 {
+			vecSwitch++
+		}
+	}
+	nMat[3] = 1.0
+	nMat[7] = 1.0
+	nMat[11] = 1.0
+	nMat[15] = 1.0
 	return &nMat
 }
 
@@ -223,6 +258,35 @@ func (a *Mat4) CrossVec(b *Vec4) (*Vec4, error) {
 	}
 
 	return &r, Err
+}
+
+//Accumulates and adds in the given translation vector into the current matrix.
+func (a *Mat4) Translation(b *Vec32) {
+
+	a[12] = a[12] + b[0]
+	a[13] = a[13] + b[1]
+	a[14] = a[14] + b[2]
+	a[15] = 1.0
+
+}
+
+func (a *Mat4) Transpose() *Mat4 {
+	for i := 0; i < MAT4; i++ {
+		for j := 0; j < MAT4; j++ {
+			id1 := i*MAT4 + j
+			id2 := j*MAT4 + i
+			tmp := a[id1]
+			a[id1] = a[id2]
+			a[id2] = tmp
+		}
+	}
+	return a
+}
+
+//Matrix Must be in column major order for OpenGL
+func ProjectionMatrix(l float32, r float32, t float32, b float32, n float32, f float32) Mat4 {
+	proj := Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, (-f / (f - n)), (-f * n) / (f - n), 0, 0, -1, 0} //scratch a pixel projection matrix
+	return proj
 }
 
 func (m *Mat3) Dot(b *Vec32) *Vec32 {
