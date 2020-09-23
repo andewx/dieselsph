@@ -148,7 +148,7 @@ func Draw(window *glfw.Window, sph *F.SPHFluid, dsl *DieselContext, lastTime tim
 	GlobalTrans[1] *= 0
 	GlobalTrans[2] *= 0
 	//Clear out translation Vector for smoothness
-	if dsl.Frames%1000 == 0 {
+	if dsl.Frames%20 == 0 {
 		gl.BindVertexArray(dsl.VAO[0])
 		gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])
 		gl.BufferSubData(gl.ARRAY_BUFFER, 0, int(sph.Count), gl.Ptr(&sph.Positions[0][0]))

@@ -260,7 +260,10 @@ func (fluid *SPHFluid) Update(index int) error {
 	//Integrates fluid force
 	fluid.Velocities[index].Add(*fluid.Forces[index].Scale(fluid.Timer.TS / fluid.Mfp.Mass))
 	//Updates Position
+	///TestSPH
+
 	fluid.Positions[index].Add(*fluid.Velocities[index].Scale(fluid.Timer.TS))
+
 	//Clear Particle Force State
 	fluid.Forces[index][0] = float32(0.0)
 	fluid.Forces[index][1] = float32(0.0)
