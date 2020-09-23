@@ -3,7 +3,7 @@ package app
 //OpenGL Windowing Calls and Structs
 import (
 	F "diesel.com/diesel/fluid"
-	U "diesel.com/diesel/utils"
+	//U "diesel.com/diesel/utils"
 	V "diesel.com/diesel/vector"
 	"fmt"
 	"github.com/go-gl/gl/v4.1-core/gl" //go does some@latest found weird shit. If fixed go back to v4.1-core. Clean modcache if this doesn't wor
@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"strings"
+	"time"
 )
 
 type AppWindow struct {
@@ -28,29 +29,22 @@ type Camera struct {
 
 type DieselContext struct {
 	Cam            *Camera
-	PrgID          uint32
-	VAO            uint32
+	PrgID          [2]uint32
+	VAO            [2]uint32
 	VBO            [2]uint32
 	Model          *V.Mat4
 	View           *V.Mat4
 	Proj           *V.Mat4
-	ModelShaderLoc int32
-	ViewShaderLoc  int32
-	ProjShaderLoc  int32
+	ModelShaderLoc [2]int32
+	ViewShaderLoc  [2]int32
+	ProjShaderLoc  [2]int32
+	ModeLoc        int32
 	Frames         int32
 }
 
 //Global Pointers :)))))))))))))) - Debugger Apparently Can't Handle This
 var GlobalTrans *V.Vec32
 var GlobalCamera *Camera
-
-var (
-	triangle = []float32{
-		0, 0.5, 0, // top
-		-0.5, -0.5, 0, // left
-		0.5, -0.5, 0, // right
-	}
-)
 
 // initGlfw initializes glfw and returns a Window to use.
 func InitGLFW(a *AppWindow) *glfw.Window {
@@ -93,14 +87,14 @@ func InitOpenGL(sph *F.SPHFluid) *DieselContext {
 
 	//Handled by local function compile Shader
 	vtxSHO, err := compileShader(string(sourceVTX), gl.VERTEX_SHADER)
+	checkError(err)
 	frgSHO, err := compileShader(string(sourceFRG), gl.FRAGMENT_SHADER)
-
 	checkError(err)
 
-	prog := gl.CreateProgram()
-	gl.AttachShader(prog, vtxSHO)
-	gl.AttachShader(prog, frgSHO)
-	gl.LinkProgram(prog)
+	prog1 := gl.CreateProgram()
+	gl.AttachShader(prog1, vtxSHO)
+	gl.AttachShader(prog1, frgSHO)
+	gl.LinkProgram(prog1)
 
 	//Generate Diesel Context which includes cameras an stuff
 	n := float32(1.3)
@@ -120,48 +114,63 @@ func InitOpenGL(sph *F.SPHFluid) *DieselContext {
 	dslContext.Model = &model
 	dslContext.View = &view
 	dslContext.Proj = &proj
-	dslContext.PrgID = prog
+	dslContext.PrgID[0] = prog1
 	//have to fucking wrangle a utf-8 out of a string again
-	dslContext.ModelShaderLoc = gl.GetUniformLocation(prog, gl.Str("model\x00"))
-	dslContext.ViewShaderLoc = gl.GetUniformLocation(prog, gl.Str("view\x00"))
-	dslContext.ProjShaderLoc = gl.GetUniformLocation(prog, gl.Str("projection\x00"))
+	dslContext.ModelShaderLoc[0] = gl.GetUniformLocation(prog1, gl.Str("model\x00"))
+	dslContext.ViewShaderLoc[0] = gl.GetUniformLocation(prog1, gl.Str("view\x00"))
+	dslContext.ProjShaderLoc[0] = gl.GetUniformLocation(prog1, gl.Str("projection\x00"))
+	dslContext.ProjShaderLoc[0] = gl.GetUniformLocation(prog1, gl.Str("projection\x00"))
+	dslContext.ModeLoc = gl.GetUniformLocation(prog1, gl.Str("mode\x00"))
 	//View/World matrix
 
 	//VBO/VAO handle
 
 	MakeVAO(sph, &dslContext)
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 	fmt.Printf("Lets do this : )\n")
 	//Pass uint32
 	return &dslContext
 }
 
-func Draw(window *glfw.Window, sph *F.SPHFluid, dsl *DieselContext) {
+func Draw(window *glfw.Window, sph *F.SPHFluid, dsl *DieselContext, lastTime time.Time) {
+
+	//Timer Function in Seconds
+	//elapse_s := lastTime.Sub(time.Now()).Seconds()
+	//fps := 1 / elapse_s
 
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
-	gl.UseProgram(dsl.PrgID)
+	gl.UseProgram(dsl.PrgID[0])
+
 	//Set uniforms
 	dsl.View.Translation(GlobalTrans) //Should accumulate Translationinto the View Matrix
 	GlobalTrans[0] *= 0
 	GlobalTrans[1] *= 0
 	GlobalTrans[2] *= 0
 	//Clear out translation Vector for smoothness
-	if dsl.Frames%100 == 0 {
-		gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])                                   //Just use pointer arithmetic i guess
-		mapPtr := gl.MapBufferRange(gl.ARRAY_BUFFER, 0, sph.Count, gl.MAP_WRITE_BIT) //
-		//Utility Mapping
-		U.TransferPositionData(mapPtr, sph.Positions, sph.Count-1)
-		gl.UnmapBuffer(gl.ARRAY_BUFFER)
-
+	if dsl.Frames%1000 == 0 {
+		gl.BindVertexArray(dsl.VAO[0])
+		gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])
+		gl.BufferSubData(gl.ARRAY_BUFFER, 0, int(sph.Count), gl.Ptr(&sph.Positions[0][0]))
+		gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 0, nil)
 	}
+	dsl.Frames++
 
-	gl.UniformMatrix4fv(dsl.ModelShaderLoc, 1, false, &dsl.Model[0])
-	gl.UniformMatrix4fv(dsl.ViewShaderLoc, 1, false, &dsl.View[0])
-	gl.UniformMatrix4fv(dsl.ProjShaderLoc, 1, false, &dsl.Proj[0])
+	gl.UniformMatrix4fv(dsl.ModelShaderLoc[0], 1, false, &dsl.Model[0])
+	gl.UniformMatrix4fv(dsl.ViewShaderLoc[0], 1, false, &dsl.View[0])
+	gl.UniformMatrix4fv(dsl.ProjShaderLoc[0], 1, false, &dsl.Proj[0])
+	gl.Uniform1i(dsl.ModeLoc, 0) // Draw opaque particles
 
-	gl.PointSize(5.0)
-	gl.BindVertexArray(dsl.VAO)
-	gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])
-	gl.DrawArrays(gl.POINTS, 0, int32(sph.Count)*3)
+	gl.PointSize(3.0)
+
+	//Bind Particles & Draw
+	gl.BindVertexArray(dsl.VAO[0])
+	gl.DrawArrays(gl.POINTS, 0, int32(sph.Count))
+	//Bind Collision Geometry & Draw
+	gl.Uniform1i(dsl.ModeLoc, 1) //Transparent Lit Surface
+	gl.BindVertexArray(dsl.VAO[1])
+
+	gl.DrawArrays(gl.TRIANGLES, 0, int32(len(sph.Colliders.Vertexes)))
 	glfw.PollEvents()
 	window.SwapBuffers()
 
@@ -170,27 +179,31 @@ func Draw(window *glfw.Window, sph *F.SPHFluid, dsl *DieselContext) {
 //Refreshes VBO object with positional da
 func MakeVAO(sph *F.SPHFluid, dsl *DieselContext) {
 
+	//Generate Two Object Buffer References
 	gl.GenBuffers(2, &dsl.VBO[0])
-	gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])                                                  //Just use pointer arithmetic i guess
-	gl.BufferData(gl.ARRAY_BUFFER, sph.Count*4*3, gl.Ptr(&sph.Positions[0][0]), gl.STREAM_DRAW) //float 32 (4 bytes)
-	gl.EnableVertexAttribArray(0)
-	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 0, nil)
-	/* Coord data VBO[0], 3 Verts per coord */
-	/*
-		gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[1])
-		gl.BufferData(gl.ARRAY_BUFFER, 4*len(triangle), gl.Ptr(triangle), gl.STATIC_DRAW)
-		gl.EnableVertexAttribArray(0)
-		gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 0, nil)
-	*/
 
-	gl.GenVertexArrays(1, &dsl.VAO)
-	gl.BindVertexArray(dsl.VAO)
+	//Generate two Separate VAO Contexts // Bind the First VAO
+	gl.GenVertexArrays(2, &dsl.VAO[0])
+	gl.BindVertexArray(dsl.VAO[0])
+	//Bind Vertex Attributes To The Currently Bound Buffer
+	//First bind the buffer as a context for the VAO
+	gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])                                                   //Just use pointer arithmetic i guess
+	gl.BufferData(gl.ARRAY_BUFFER, sph.Count*4*3, gl.Ptr(&sph.Positions[0][0]), gl.DYNAMIC_DRAW) //float 32 (4 bytes)
 	gl.EnableVertexAttribArray(0)
 	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 0, nil)
+
+	//Now Bind All The Collision Buffer Geometry
+	gl.BindVertexArray(dsl.VAO[1])
+	gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[1])
+	gl.BufferData(gl.ARRAY_BUFFER, 4*len(sph.Colliders.Vertexes)*3, gl.Ptr(&sph.Colliders.Vertexes[0][0]), gl.STATIC_DRAW)
+	gl.EnableVertexAttribArray(0)
+	gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 0, nil)
+
 }
 
 func checkError(err error) {
 	if err != nil {
+		fmt.Printf(err.Error())
 		panic(err)
 	}
 }
@@ -219,7 +232,7 @@ func compileShader(source string, shaderType uint32) (uint32, error) {
 }
 
 func ProcessInput(w *glfw.Window, key glfw.Key, scancode int, action glfw.Action, mods glfw.ModifierKey) {
-	cameraSpeed := float32(0.5) // adjust accordingly
+	cameraSpeed := float32(0.1) // adjust accordingly
 	if key == glfw.KeyW {
 		//Accumulates the translation Vector
 		p := V.Vec32{0.0, 0.0, -1.0}

@@ -16,9 +16,10 @@ type Triangle struct {
 	Verts [3]*Vec.Vec32
 }
 
+//Triangle Mesh Storage
 type Mesh struct {
-	Mesh    []Triangle
-	Normals []Vec.Vec32
+	Vertexes []Vec.Vec32
+	Normals  []Vec.Vec32
 }
 
 type Sphere struct {
@@ -37,12 +38,15 @@ func InitTriangle(a Vec.Vec32, b Vec.Vec32, c Vec.Vec32) Triangle {
 	return V
 }
 
-func InitMesh(triList []Triangle) Mesh {
+func InitMesh(vertices []Vec.Vec32) Mesh {
 	nMesh := Mesh{}
-	nMesh.Mesh = triList
-	nMesh.Normals = make([]Vec.Vec32, len(triList))
-	for i := 0; i < len(triList); i++ {
-		nMesh.Normals[i] = nMesh.Mesh[i].Normal()
+	nMesh.Vertexes = vertices
+	nMesh.Normals = make([]Vec.Vec32, len(vertices)/3)
+	index := 0
+	for i := 0; i < len(vertices)-3; i += 3 {
+		thisTriangle := InitTriangle(vertices[i], vertices[i+1], vertices[i+2])
+		nMesh.Normals[index] = thisTriangle.Normal()
+		index++
 	}
 
 	return nMesh
@@ -51,14 +55,14 @@ func InitMesh(triList []Triangle) Mesh {
 func (tri *Triangle) Origin() *Triangle {
 	V := Triangle{}
 	V.Verts[0] = tri.Verts[0].Sub(*tri.Verts[0])
-	V.Verts[1] = tri.Verts[1].Sub(*tri.Verts[0])
-	V.Verts[2] = tri.Verts[2].Sub(*tri.Verts[0])
+	V.Verts[1] = tri.Verts[1].Sub(*tri.Verts[1])
+	V.Verts[2] = tri.Verts[2].Sub(*tri.Verts[2])
 
 	return &V
 }
 
 func (tri *Triangle) Normal() Vec.Vec32 {
-	N := Vec.Cross(Vec.Sub(*tri.Verts[1], *tri.Verts[0]), Vec.Sub(*tri.Verts[2], *tri.Verts[1]))
+	N := Vec.Cross(Vec.Sub(*tri.Verts[1], *tri.Verts[0]), Vec.Sub(*tri.Verts[2], *tri.Verts[0]))
 	return Vec.Normalize(N)
 }
 
@@ -78,13 +82,13 @@ func (t *Triangle) Collision(P *Vec.Vec32) (float32, bool) {
 func (g *Mesh) Collision(P *Vec.Vec32, V *Vec.Vec32, dt float32) (Vec.Vec32, bool) {
 
 	collision := false
-	TRIS := len(g.Mesh)
+	VERTS := len(g.Vertexes)
 
 	//We search each triangle for each particle, this needs to be improved
 	//We could store triangles in their own spatial hash structure based on
 	//Triangle Origin and Hash the Particle Position to find the comparison bucket
-	for i := 0; i < TRIS; i++ {
-		triangle := g.Mesh[i]
+	for i := 0; i < VERTS; i += 3 {
+		triangle := InitTriangle(g.Vertexes[i], g.Vertexes[i+1], g.Vertexes[i+2])
 		nPos := Vec.Add(*P, Vec.Scale(*V, dt))
 		var dist float32
 		var bary bool
@@ -162,8 +166,7 @@ func (tri *Triangle) Barycentric(p *Vec.Vec32) (*Vec.Vec2, float32, bool) {
 //Triangle Mesh Box with 12 Triangles // 36 Vertexes
 func Box(w float32, h float32, d float32, o Vec.Vec32) *Mesh {
 	const TRIANGLES = 12
-	const Verts = 3
-	var BoxTris = make([]Triangle, 12)
+	var Verts = make([]Vec.Vec32, 12*3)
 	x := o[0]
 	y := o[1]
 	z := o[2]
@@ -173,60 +176,60 @@ func Box(w float32, h float32, d float32, o Vec.Vec32) *Mesh {
 	s := d / 2
 
 	//FRONT FACE -Z
-	BoxTris[0].Verts[0] = &Vec.Vec32{x - p, y - q, z - s} //LFB
-	BoxTris[0].Verts[1] = &Vec.Vec32{x - p, y + q, z - s} //LFT
-	BoxTris[0].Verts[2] = &Vec.Vec32{x + p, y - q, z - s} //RFB
+	Verts[0] = Vec.Vec32{x - p, y - q, z - s} //LFB
+	Verts[1] = Vec.Vec32{x - p, y + q, z - s} //LFT
+	Verts[2] = Vec.Vec32{x + p, y - q, z - s} //RFB
 
-	BoxTris[1].Verts[0] = &Vec.Vec32{x - p, y + q, z - s} //LFT
-	BoxTris[1].Verts[1] = &Vec.Vec32{x + p, y + q, z - s} //RFT
-	BoxTris[1].Verts[2] = &Vec.Vec32{x + p, y - q, z - s} //RFB
+	Verts[3] = Vec.Vec32{x - p, y + q, z - s} //LFT
+	Verts[4] = Vec.Vec32{x + p, y + q, z - s} //RFT
+	Verts[5] = Vec.Vec32{x + p, y - q, z - s} //RFB
 
 	//BACK FACE -Z
-	BoxTris[2].Verts[0] = &Vec.Vec32{x - p, y - q, z + s} //LBB
-	BoxTris[2].Verts[1] = &Vec.Vec32{x - p, y + q, z + s} //LBT
-	BoxTris[2].Verts[2] = &Vec.Vec32{x + p, y - q, z + s} //RBB
+	Verts[6] = Vec.Vec32{x - p, y - q, z + s} //LBB
+	Verts[7] = Vec.Vec32{x - p, y + q, z + s} //LBT
+	Verts[8] = Vec.Vec32{x + p, y - q, z + s} //RBB
 
-	BoxTris[3].Verts[0] = &Vec.Vec32{x - p, y + q, z + s} //LBT
-	BoxTris[3].Verts[1] = &Vec.Vec32{x + p, y + q, z + s} //RBT
-	BoxTris[3].Verts[2] = &Vec.Vec32{x + p, y - q, z + s} //RBB
+	Verts[9] = Vec.Vec32{x - p, y + q, z + s}  //LBT
+	Verts[10] = Vec.Vec32{x + p, y + q, z + s} //RBT
+	Verts[11] = Vec.Vec32{x + p, y - q, z + s} //RBB
 
 	//BOTTOM FACE -Y
-	BoxTris[4].Verts[0] = &Vec.Vec32{x - p, y - q, z - s} //LFB
-	BoxTris[4].Verts[1] = &Vec.Vec32{x - p, y - q, z + s} //LBB
-	BoxTris[4].Verts[2] = &Vec.Vec32{x + p, y - q, z + s} //RBB
+	Verts[12] = Vec.Vec32{x - p, y - q, z + s} //LFB
+	Verts[13] = Vec.Vec32{x - p, y - q, z - s} //LBB
+	Verts[14] = Vec.Vec32{x + p, y - q, z - s} //RBB
 
-	BoxTris[5].Verts[0] = &Vec.Vec32{x - p, y - q, z + s} //LFB
-	BoxTris[5].Verts[1] = &Vec.Vec32{x + p, y - q, z + s} //RFB
-	BoxTris[5].Verts[2] = &Vec.Vec32{x + p, y - q, z - s} //RBB
+	Verts[15] = Vec.Vec32{x - p, y - q, z + s} //LFB
+	Verts[16] = Vec.Vec32{x + p, y - q, z + s} //RFB
+	Verts[17] = Vec.Vec32{x + p, y - q, z - s} //RBB
 
 	//Top FACE - Y
-	BoxTris[6].Verts[0] = &Vec.Vec32{x - p, y + q, z - s} //LFT
-	BoxTris[6].Verts[1] = &Vec.Vec32{x - p, y + q, z + s} //LBT
-	BoxTris[6].Verts[2] = &Vec.Vec32{x + p, y + q, z + s} //RBT
+	Verts[18] = Vec.Vec32{x - p, y + q, z + s} //LFT
+	Verts[19] = Vec.Vec32{x - p, y + q, z - s} //LBT
+	Verts[20] = Vec.Vec32{x + p, y + q, z - s} //RBT
 
-	BoxTris[7].Verts[0] = &Vec.Vec32{x - p, y + q, z + s} //LFT
-	BoxTris[7].Verts[1] = &Vec.Vec32{x + p, y + q, z + s} //RFT
-	BoxTris[7].Verts[2] = &Vec.Vec32{x + p, y + q, z - s} //RBT
+	Verts[21] = Vec.Vec32{x - p, y + q, z + s} //LFT
+	Verts[22] = Vec.Vec32{x + p, y + q, z + s} //RFT
+	Verts[23] = Vec.Vec32{x + p, y + q, z - s} //RBT
 
 	//LEFT FACE - X
-	BoxTris[8].Verts[0] = &Vec.Vec32{x - p, y + q, z + s} //LFT
-	BoxTris[8].Verts[1] = &Vec.Vec32{x - p, y - q, z + s} //LFB
-	BoxTris[8].Verts[2] = &Vec.Vec32{x - p, y - q, z + s} //LBB
+	Verts[24] = Vec.Vec32{x - p, y + q, z + s} //LFT
+	Verts[25] = Vec.Vec32{x - p, y - q, z + s} //LFB
+	Verts[26] = Vec.Vec32{x - p, y - q, z - s} //LBB
 
-	BoxTris[9].Verts[0] = &Vec.Vec32{x - p, y + q, z + s} //LFT
-	BoxTris[9].Verts[1] = &Vec.Vec32{x - p, y + q, z - s} //LFB
-	BoxTris[9].Verts[2] = &Vec.Vec32{x - p, y - q, z + s} //LBB
+	Verts[27] = Vec.Vec32{x - p, y + q, z + s} //LFT
+	Verts[28] = Vec.Vec32{x - p, y + q, z - s} //LFB
+	Verts[29] = Vec.Vec32{x - p, y - q, z - s} //LBB
 
 	//Right FACE - X
-	BoxTris[10].Verts[0] = &Vec.Vec32{x + p, y + q, z + s} //LFT
-	BoxTris[10].Verts[1] = &Vec.Vec32{x + p, y - q, z + s} //LFB
-	BoxTris[10].Verts[2] = &Vec.Vec32{x + p, y - q, z - s} //LBB
+	Verts[30] = Vec.Vec32{x + p, y + q, z + s} //LFT
+	Verts[31] = Vec.Vec32{x + p, y - q, z + s} //LFB
+	Verts[32] = Vec.Vec32{x + p, y - q, z - s} //LBB
 
-	BoxTris[11].Verts[0] = &Vec.Vec32{x + p, y + q, z + s} //RFT
-	BoxTris[11].Verts[1] = &Vec.Vec32{x + p, y + q, z - s} //RFB
-	BoxTris[11].Verts[2] = &Vec.Vec32{x + p, y - q, z - s} //RBB
+	Verts[33] = Vec.Vec32{x + p, y + q, z + s} //RFT
+	Verts[34] = Vec.Vec32{x + p, y + q, z - s} //RFB
+	Verts[35] = Vec.Vec32{x + p, y - q, z - s} //RBB
 
-	boxMesh := InitMesh(BoxTris)
+	boxMesh := InitMesh(Verts)
 	return &boxMesh
 
 }
@@ -238,10 +241,10 @@ func (tri * Triangle)Barycentric(p *Vec.Vec32)(*Vec.Vec32 ,float32){
 
   //Perform V0 Origin Transform
   T := tri.Origin()
-  P := Vec.Normalize(p.Sub(*tri.Verts[0]))
-  A := Vec.Normalize(T.Verts[0])
-  B := Vec.Normalize(T.Verts[1])
-  C := Vec.Normalize(T.Verts[2])
+  P := Vec.Normalize(p.Sub(*tri))
+  A := Vec.Normalize(T)
+  B := Vec.Normalize(T)
+  C := Vec.Normalize(T)
   //Project our Point into the Plane of our triangle
   N := Vec.Cross(*C,*B)
   PROJ :=Vec.Proj(*P,N)
