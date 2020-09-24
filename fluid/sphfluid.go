@@ -97,7 +97,7 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle) 
 	fluid.Forces = make([]V.Vec32, fluid.Count)
 
 	//Spatial Acceleration Grid -- We're having an issue with the spatial hashing modulus due to rounding modulus error
-	fluid.SPHGrid = AllocateGridUserDefined(init.Width, 7) //Constructs a cubic grid the 7 constant needs to be change
+	fluid.SPHGrid = AllocateGridUserDefined(init.Width, 7) //Construcs a cubic grid the 7 constant needs to be change
 
 	//Initialize Particle Positions and Stuff
 	for i := 0; i < init.WidthCells; i++ {

@@ -145,7 +145,7 @@ func copyIndexes(index [3]int, cpyIndex [3]int) error {
 	return nil
 }
 
-//Creates a custom storage Grid cube with specified int:Scale wrapping domains and  int:dim specifying  subdivisions in the  cube
+//Creates a custom storage Grid cube with specified int:Scale wrapping domainsand  int:dim specifying  subdivisions in the  cube
 func AllocateGridUserDefined(Scale float32, dim int) *SpatialHashGrid {
 
 	sphGrid := SpatialHashGrid{Scale, dim, make([][][]*IDNode, dim)}
