@@ -141,11 +141,10 @@ func (this *DSLFluidRenderer) Run() {
 	var threadStatus chan int = make(chan int)
 
 	//Spawn Fluid Computations in Separate Thread & Lock Current
-	go this.SPH.Compute(threadStatus, this.Config.PrtlInterval)
 
 	for !this.Context.GLFWindow.ShouldClose() {
+		this.SPH.Compute(threadStatus, this.Config.PrtlInterval)
 		this.Anim.CurrentTime = time.Now()
 		Draw(this.SPH, this.Context, this.Anim, this.Config.PrtlInterval, threadStatus)
 	}
-	runtime.UnlockOSThread()
 }
