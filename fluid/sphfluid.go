@@ -50,9 +50,9 @@ type MassFluidParticle struct {
 }
 
 type Timer struct {
-	T        float32
-	TS       float32
-	TIMELAST float32
+	T        float64
+	TS       float64
+	TIMELAST float64
 }
 
 func (t *Timer) StepTime() {
@@ -243,7 +243,7 @@ func (fluid *SPHFluid) PressureEOS(i int, negativePressure float32) {
 //Test Particles Against Possible Mesh Collisions given a position and velocity
 func (fluid *SPHFluid) Collide(index int) {
 	//Resolve Particle Collisions
-	normal, collis := fluid.Colliders.Collision(&fluid.Positions[index], &fluid.Velocities[index], fluid.Timer.TS)
+	normal, collis := fluid.Colliders.Collision(&fluid.Positions[index], &fluid.Velocities[index], float32(fluid.Timer.TS))
 
 	if collis == true {
 		k_stiff := float32(0.85) //Restitution Coefficient. Further research req'd
@@ -258,11 +258,11 @@ func (fluid *SPHFluid) Collide(index int) {
 func (fluid *SPHFluid) Update(index int) error {
 
 	//Integrates fluid force
-	fluid.Velocities[index].Add(*fluid.Forces[index].Scale(fluid.Timer.TS / fluid.Mfp.Mass))
+	fluid.Velocities[index].Add(*fluid.Forces[index].Scale(float32(fluid.Timer.TS) / fluid.Mfp.Mass))
 	//Updates Position
 	///TestSPH
 
-	fluid.Positions[index].Add(*fluid.Velocities[index].Scale(fluid.Timer.TS))
+	fluid.Positions[index].Add(*fluid.Velocities[index].Scale(float32(fluid.Timer.TS)))
 
 	//Clear Particle Force State
 	fluid.Forces[index][0] = float32(0.0)
@@ -274,28 +274,38 @@ func (fluid *SPHFluid) Update(index int) error {
 
 //Main SPH fluid loop. Integrates all forces. Computes pressure from EOS and Resolves
 //Collisions. Updates particle velocity and position then clears all forces
-func (fluid *SPHFluid) Compute() {
+func (fluid *SPHFluid) Compute(threadStatus chan int, secondsAdvance float64) {
+
 	FLUID := fluid.Count
 	GRAVITY := V.Vec32{0, GRAV, 0}
 	EXTERNAL := V.Vec32{}
 	EXTERNAL.Add(GRAVITY)
 
-	//Conditioning Loop
-	fluid.UpdateDensities()
+	done := false
 
-	//Fluid Properties
-	for i := 0; i < FLUID; i++ {
-		fluid.PressureEOS(i, 0) //Negative Pressure Scale 0
-		fluid.Pressure(i)
-		fluid.Viscosity(i)
-		fluid.External(i, EXTERNAL)
-		//Resolve Mesh Collisions
-		fluid.Collide(i)
+	for !done {
+		fluid.UpdateDensities()
+		for i := 0; i < FLUID; i++ {
+			fluid.PressureEOS(i, 0) //Negative Pressure Scale 0
+			fluid.Pressure(i)
+			fluid.Viscosity(i)
+			fluid.External(i, EXTERNAL)
+			//Resolve Mesh Collisions
+			fluid.Collide(i)
 
-		//Update Particles and resolve forces
-		fluid.Update(i)
+			//Update Particles and resolve forces
+			fluid.Update(i)
+		}
+
+		fluid.Timer.StepTime()
+
+		//Has Time Advanced Sufficiently
+		//If so send channel message so parent thread can update buffers
+		if fluid.Timer.T >= secondsAdvance {
+			threadStatus <- 20 //FLUID_THREAD_SYNCED CONST
+			fluid.Timer.T = 0.0
+			fluid.Timer.TIMELAST = 0.0
+		}
 	}
-
-	fluid.Timer.StepTime()
 
 }

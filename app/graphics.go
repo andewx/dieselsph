@@ -40,6 +40,7 @@ type DieselContext struct {
 	ProjShaderLoc  [2]int32
 	ModeLoc        int32
 	Frames         int32
+	GLFWindow      *glfw.Window
 }
 
 //Global Pointers :)))))))))))))) - Debugger Apparently Can't Handle This
@@ -133,7 +134,7 @@ func InitOpenGL(sph *F.SPHFluid) *DieselContext {
 	return &dslContext
 }
 
-func Draw(window *glfw.Window, sph *F.SPHFluid, dsl *DieselContext, lastTime time.Time) {
+func Draw(sph *F.SPHFluid, dsl *DieselContext, anim *AnimationTimer, interval float64, c chan int) {
 
 	//Timer Function in Seconds
 	//elapse_s := lastTime.Sub(time.Now()).Seconds()
@@ -147,14 +148,18 @@ func Draw(window *glfw.Window, sph *F.SPHFluid, dsl *DieselContext, lastTime tim
 	GlobalTrans[0] *= 0
 	GlobalTrans[1] *= 0
 	GlobalTrans[2] *= 0
-	//Clear out translation Vector for smoothness
-	if dsl.Frames%20 == 0 {
-		gl.BindVertexArray(dsl.VAO[0])
-		gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])
-		gl.BufferSubData(gl.ARRAY_BUFFER, 0, int(sph.Count), gl.Ptr(&sph.Positions[0][0]))
-		gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 0, nil)
+
+	//Sync Particle System With Thread
+	if time.Now().Sub(anim.LastParticleSync).Seconds() >= interval {
+		status := <-c
+		if status == FLUID_THREAD_SYNCED {
+			gl.BindVertexArray(dsl.VAO[0])
+			gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])
+			gl.BufferSubData(gl.ARRAY_BUFFER, 0, int(sph.Count), gl.Ptr(&sph.Positions[0][0]))
+			gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 0, nil)
+		}
+		anim.LastParticleSync = time.Now()
 	}
-	dsl.Frames++
 
 	gl.UniformMatrix4fv(dsl.ModelShaderLoc[0], 1, false, &dsl.Model[0])
 	gl.UniformMatrix4fv(dsl.ViewShaderLoc[0], 1, false, &dsl.View[0])
@@ -172,7 +177,7 @@ func Draw(window *glfw.Window, sph *F.SPHFluid, dsl *DieselContext, lastTime tim
 
 	gl.DrawArrays(gl.TRIANGLES, 0, int32(len(sph.Colliders.Vertexes)))
 	glfw.PollEvents()
-	window.SwapBuffers()
+	dsl.GLFWindow.SwapBuffers()
 
 }
 
