@@ -109,7 +109,7 @@ func DefaultDslFl() *DslFlConfig {
 	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -5.0}, 2.0, 1.0, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, 40}
 }
 
-func InitRenderer(config *DslFlConfig) *DSLFluidRenderer {
+func RenderFluidGL(config *DslFlConfig) error {
 
 	//Fluid Setup
 	var mfp = F.MassFluidParticle{config.PrtlMass, config.Viscos, config.KrnlRadius, config.KrnlRadius, DefaultTimeStep, config.SOS, config.EOSDens, EOSGamma}
@@ -130,18 +130,14 @@ func InitRenderer(config *DslFlConfig) *DSLFluidRenderer {
 	dieselContext.GLFWindow = window
 	thisFluid.Context = dieselContext
 	window.SetKeyCallback(ProcessInput)
-
-	//Unlocks the Thread -- This Might Be Problematic
-	return &thisFluid
+	thisFluid.Run()
+	return nil
 }
 
-//Main Fluid Run Loop -- Spawns
+//Main Fluid Run Loop -- Must Run inside same thread as Initiation Function
 func (this *DSLFluidRenderer) Run() {
 
 	var threadStatus chan int = make(chan int)
-
-	//Spawn Fluid Computations in Separate Thread & Lock Current
-
 	for !this.Context.GLFWindow.ShouldClose() {
 		this.SPH.Compute(threadStatus, this.Config.PrtlInterval)
 		this.Anim.CurrentTime = time.Now()

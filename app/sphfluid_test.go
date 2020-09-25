@@ -7,6 +7,7 @@ import (
 //Testing SPH Routines with OpenGL Program Windo
 func TestSPH(t *testing.T) {
 	DefaultConfig := DefaultDslFl()
-	FluidRenderer := InitRenderer(DefaultConfig)
-	FluidRenderer.Run()
+
+	//Application Thread Render
+	RenderFluidGL(DefaultConfig)
 }
