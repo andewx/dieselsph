@@ -3,6 +3,7 @@ package app
 //Manages Fluid Scene Routine - Composes Concurrency Demands and Animation - Timing Settings
 import (
 	F "diesel.com/diesel/fluid"
+	U "diesel.com/diesel/utils"
 	V "diesel.com/diesel/vector"
 	"github.com/go-gl/glfw/v3.2/glfw"
 	"runtime"
@@ -65,6 +66,7 @@ type DslFlConfig struct {
 	Viscos       float32 //Particle Viscosity
 	DrwMde       int     //particle draw mode
 	Samples      int     //particle samples to take.
+	PCISamples   int     //PCI Correction Steps
 }
 
 //Seconds timer for animation
@@ -92,21 +94,23 @@ type DSLFluidRenderer struct {
 
 //All Vars are metric - metric constants for water
 const (
-	PSync           = 0.004166 //seconds (24fps update
-	H20Mass         = 0.01     //kg
-	H20Visc         = 0.001002 //kg*(m/s)
-	H20Kern         = 0.0625   //Smoothing Kernel
-	H20LiqDensity   = 1001.12  //kg/m^3
-	SOS             = 1480.01  //m/s
-	Particles       = 20       //15,625 Particles -- 1.9MB Positional Data Ram
-	DefaultTimeStep = 0.001    //Evolution at Small Interval
-	EOSGamma        = 1.4      //Equation of State Exponent Feature
+	PSync           = 0.04166 //seconds (24fps update
+	H20Mass         = 0.001   //kg/cm3
+	H20Visc         = 1.0     //kg*(m/s)
+	H20Kern         = .125    //Smoothing Kernel
+	H20LiqDensity   = 0.001   //kg/cm^3
+	SOS             = 10.01   //m/s (maximal information transfer) 1480 m/s with sound
+	Particles       = 10      //15,625 Particles -- 1.9MB Positional Data Ram
+	DefaultTimeStep = 0.1     //Evolution at Small Interval
+	EOSGamma        = 7.3     //Equation of State Exponent Feature
+	PCISamples      = 20
+	SPHSamples      = 10
 )
 
 //Initializes Default Fluid Structure During Initialization
 func DefaultDslFl() *DslFlConfig {
 	//Syncs at 24 Frames with a 60FPS runtime. 0.041 Seconds
-	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -5.0}, 2.0, 1.0, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, 40}
+	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -5.0}, 2.0, 0.1, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples}
 }
 
 func RenderFluidGL(config *DslFlConfig) error {
@@ -119,6 +123,8 @@ func RenderFluidGL(config *DslFlConfig) error {
 	var thisTimer = AnimationTimer{time.Now(), time.Now(), time.Now(), time.Now()}
 	var thisFluid = DSLFluidRenderer{&sphfluid, DefaultDslFl(), &thisTimer, make(map[string]int), make(map[string]V.Vec32), make(map[string]V.Mat4), make(map[string]float32), nil}
 
+	//Scale the Positions
+	U.ScalePositions(thisFluid.SPH.Positions, thisFluid.Config.MdlOrg, thisFluid.Config.PrtlScale)
 	//Set OpenGL Windowing Context with GLFW and GO-GL Bindings
 	glWindowProperties := AppWindow{1440, 800, "Diesel Particle SPH"}
 

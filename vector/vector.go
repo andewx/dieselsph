@@ -101,9 +101,9 @@ func Sub(v Vec32, b Vec32) Vec32 {
 
 //Add - Mutate
 func (v *Vec32) Add(b Vec32) *Vec32 {
-	v[0] = v[0] + b[0]
-	v[1] = v[1] + b[1]
-	v[2] = v[2] + b[2]
+	v[0] += b[0]
+	v[1] += b[1]
+	v[2] += b[2]
 	return v
 }
 

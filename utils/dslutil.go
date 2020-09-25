@@ -30,3 +30,25 @@ func TransferPositionData(graphicsPtr unsafe.Pointer, posArray []V.Vec32, count 
 
 	return nil
 }
+
+//Scales Position List Points Around an Origin
+func ScalePositions(pos []V.Vec32, origin V.Vec32, scale float32) {
+
+	//Complex Matrix Mult Didn't Work Completely with the Affine Portion Lol
+
+	count := len(pos)
+
+	for i := 0; i < count; i++ {
+		v := pos[i]
+		//Just Translate Normally
+		v.Sub(origin)
+		v.Scale(scale)
+		v.Add(origin)
+
+		pos[i] = v
+
+	}
+
+	return
+
+}

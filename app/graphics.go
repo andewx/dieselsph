@@ -152,14 +152,20 @@ func Draw(sph *F.SPHFluid, dsl *DieselContext, anim *AnimationTimer, interval fl
 
 	//Sync Particle System With Thread
 	if time.Now().Sub(anim.LastParticleSync).Seconds() >= interval {
-		status := <-c //Blocking Thread Channel
+		status := <-c //Fluid should be synced
 		if status == FLUID_THREAD_SYNCED {
 			gl.BindVertexArray(dsl.VAO[0])
 			gl.BindBuffer(gl.ARRAY_BUFFER, dsl.VBO[0])
-			gl.BufferSubData(gl.ARRAY_BUFFER, 0, int(sph.Count), gl.Ptr(&sph.Positions[0][0]))
+			gl.BufferSubData(gl.ARRAY_BUFFER, 0, int(sph.Count)*4*3, gl.Ptr(&sph.Positions[0][0]))
 			gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 0, nil)
 		}
 		anim.LastParticleSync = time.Now()
+
+		//Clear and update Grid
+		//	sph.SPHGrid.Clear()
+		//	sph.SPHGrid.Load(sph.Positions)
+
+		c <- FLUID_THREAD_WORKING //Signal the channel for Fluid to Continue
 	}
 
 	gl.UniformMatrix4fv(dsl.ModelShaderLoc[0], 1, false, &dsl.Model[0])

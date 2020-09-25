@@ -86,7 +86,7 @@ func (K *CubicKernel) O1D(distance float32) float32 {
 		return 0.0
 	}
 	x := 1.0 - distance/K.H[0]
-	return -45.0 / (32.0 * PI * K.H[3]) * distance * x * x
+	return 90 / (PI * K.H[4]) * x
 }
 
 func (K *CubicKernel) O2D(distance float32) float32 {

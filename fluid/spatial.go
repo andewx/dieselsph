@@ -176,6 +176,17 @@ func (s *SpatialHashGrid) Hash(p *V.Vec32) *[3]int {
 	return &idx
 }
 
+func (s *SpatialHashGrid) Clear() error {
+	for i := 0; i < s.Subdiv; i++ {
+		for j := 0; j < s.Subdiv; j++ {
+			for k := 0; k < s.Subdiv; k++ {
+				s.Grid[i][j][k] = nil //Dereference Entire Grid
+			}
+		}
+	}
+	return nil
+}
+
 //Loads particle grid with particle system positional data by Inserting nodes Based
 //On indexed positional data
 func (s *SpatialHashGrid) Load(Positions []V.Vec32) error {
