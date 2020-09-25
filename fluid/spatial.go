@@ -121,14 +121,18 @@ func (shg *SpatialHashGrid) GetSamples(position *V.Vec32) ([]IDNode, int, error)
 	for i := 0; i < NEIGHBORS; i++ {
 		PNode, err := shg.getHash(neighbors[i]) //Neighbors actually searchits own first index first
 
-		if err != nil {
-			//Ignore Error For Now But We are getting a repeated [-1,-1,-1] Index from gethash
+		if err != nil || count > PARTICLE_SAMPLES-1 {
+			return samples, count, err //Ignore Error For Now But We are getting a repeated [-1,-1,-1] Index from gethash
 		} else {
 			if PNode != nil {
 				PNodeIter := NewIter(*PNode)
 				for PNodeIter.Next() {
-					samples[count] = *PNodeIter.P
-					count++
+					if count < PARTICLE_SAMPLES {
+						samples[count] = *PNodeIter.P
+						count++
+					} else {
+						return samples, count, nil
+					}
 				}
 			}
 		}

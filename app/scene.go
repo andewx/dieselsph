@@ -52,7 +52,7 @@ const (
 //Our configuration sturction for Initialization of the Renderer Duplicates Fluid Parameters so we can pass them
 //from a user point of view
 type DslFlConfig struct {
-	cU           int     //Total Particles = ParticlesCU^3 (Cubic Root of Particle Size)
+	CU           int     //Total Particles = ParticlesCU^3 (Cubic Root of Particle Size)
 	MdlOrg       V.Vec32 //Model origin for initialization
 	MdlW         float32 //Model dimensions w x h x d
 	PrtlScale    float32 //Scale and Transform Initialized Particle Field towards origin (1 for no transform)
@@ -92,13 +92,13 @@ type DSLFluidRenderer struct {
 
 //All Vars are metric - metric constants for water
 const (
-	PSync           = 0.04166  //seconds (24fps update
+	PSync           = 0.004166 //seconds (24fps update
 	H20Mass         = 0.01     //kg
 	H20Visc         = 0.001002 //kg*(m/s)
 	H20Kern         = 0.0625   //Smoothing Kernel
 	H20LiqDensity   = 1001.12  //kg/m^3
 	SOS             = 1480.01  //m/s
-	Particles       = 25       //15,625 Particles -- 1.9MB Positional Data Ram
+	Particles       = 20       //15,625 Particles -- 1.9MB Positional Data Ram
 	DefaultTimeStep = 0.001    //Evolution at Small Interval
 	EOSGamma        = 1.4      //Equation of State Exponent Feature
 )
@@ -113,8 +113,8 @@ func RenderFluidGL(config *DslFlConfig) error {
 
 	//Fluid Setup
 	var mfp = F.MassFluidParticle{config.PrtlMass, config.Viscos, config.KrnlRadius, config.KrnlRadius, DefaultTimeStep, config.SOS, config.EOSDens, EOSGamma}
-	var boxfluid = F.BoxFluidSystem{config.MdlOrg, config.MdlW, config.MdlW, config.MdlW, 9, 9, 9} //Box System Description
-	var sphfluid = F.SPHFluid{}                                                                    //Main Fluid Component
+	var boxfluid = F.BoxFluidSystem{config.MdlOrg, config.MdlW, config.MdlW, config.MdlW, config.CU, config.CU, config.CU} //Box System Description
+	var sphfluid = F.SPHFluid{}                                                                                            //Main Fluid Component
 	sphfluid.Initialize(&boxfluid, &mfp)
 	var thisTimer = AnimationTimer{time.Now(), time.Now(), time.Now(), time.Now()}
 	var thisFluid = DSLFluidRenderer{&sphfluid, DefaultDslFl(), &thisTimer, make(map[string]int), make(map[string]V.Vec32), make(map[string]V.Mat4), make(map[string]float32), nil}
@@ -138,8 +138,9 @@ func RenderFluidGL(config *DslFlConfig) error {
 func (this *DSLFluidRenderer) Run() {
 
 	var threadStatus chan int = make(chan int)
+
+	go this.SPH.Compute(threadStatus, this.Config.PrtlInterval)
 	for !this.Context.GLFWindow.ShouldClose() {
-		this.SPH.Compute(threadStatus, this.Config.PrtlInterval)
 		this.Anim.CurrentTime = time.Now()
 		Draw(this.SPH, this.Context, this.Anim, this.Config.PrtlInterval, threadStatus)
 	}

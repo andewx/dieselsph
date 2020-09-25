@@ -281,31 +281,31 @@ func (fluid *SPHFluid) Compute(threadStatus chan int, secondsAdvance float64) {
 	EXTERNAL := V.Vec32{}
 	EXTERNAL.Add(GRAVITY)
 
-	//	done := false
+	done := false
 
-	//	for !done {
-	fluid.UpdateDensities()
-	for i := 0; i < FLUID; i++ {
-		fluid.PressureEOS(i, 0) //Negative Pressure Scale 0
-		fluid.Pressure(i)
-		fluid.Viscosity(i)
-		fluid.External(i, EXTERNAL)
-		//Resolve Mesh Collisions
-		fluid.Collide(i)
+	for !done {
+		fluid.UpdateDensities()
+		for i := 0; i < FLUID; i++ {
+			fluid.PressureEOS(i, 0) //Negative Pressure Scale 0
+			fluid.Pressure(i)
+			fluid.Viscosity(i)
+			fluid.External(i, EXTERNAL)
+			//Resolve Mesh Collisions
+			fluid.Collide(i)
 
-		//Update Particles and resolve forces
-		fluid.Update(i)
+			//Update Particles and resolve forces
+			fluid.Update(i)
+		}
+
+		fluid.Timer.StepTime()
+
+		//Has Time Advanced Sufficiently
+		//If so send channel message so parent thread can update buffers
+		if fluid.Timer.T >= secondsAdvance {
+			threadStatus <- 20 //FLUID_THREAD_SYNCED CONST
+			fluid.Timer.T = 0.0
+			fluid.Timer.TIMELAST = 0.0
+		}
 	}
-
-	fluid.Timer.StepTime()
-
-	//Has Time Advanced Sufficiently
-	//If so send channel message so parent thread can update buffers
-	//	if fluid.Timer.T >= secondsAdvance {
-	//	threadStatus <- 20 //FLUID_THREAD_SYNCED CONST
-	//		fluid.Timer.T = 0.0
-	//		fluid.Timer.TIMELAST = 0.0
-	//	}
-	//}
 
 }
