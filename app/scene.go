@@ -100,7 +100,7 @@ const (
 	H20Kern         = .125    //Smoothing Kernel
 	H20LiqDensity   = 0.001   //kg/cm^3
 	SOS             = 10.01   //m/s (maximal information transfer) 1480 m/s with sound
-	Particles       = 2       //15,625 Particles -- 1.9MB Positional Data Ram
+	Particles       = 10      //15,625 Particles -- 1.9MB Positional Data Ram
 	DefaultTimeStep = 0.1     //Evolution at Small Interval
 	EOSGamma        = 7.3     //Equation of State Exponent Feature
 	PCISamples      = 20

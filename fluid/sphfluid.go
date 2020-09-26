@@ -243,11 +243,12 @@ func (fluid *SPHFluid) PressureEOS(i int, negativePressure float32) {
 //Test Particles Against Possible Mesh Collisions given a position and velocity
 func (fluid *SPHFluid) Collide(index int) {
 	//Resolve Particle Collisions
-	normal, collis := fluid.Colliders.Collision(&fluid.Positions[index], &fluid.Velocities[index], float32(fluid.Timer.TS))
+	normal, collis := fluid.Colliders.Collision(fluid.Positions[index], fluid.Velocities[index], float32(fluid.Timer.TS))
 
 	if collis == true {
 		k_stiff := float32(0.85) //Restitution Coefficient. Further research req'd
-		fluid.Velocities[index] = V.Reflect(fluid.Velocities[index], normal)
+		refl := V.Reflect(fluid.Velocities[index], normal)
+		fluid.Velocities[index] = refl
 		fluid.Velocities[index].Scale(k_stiff)
 	}
 }

@@ -2,6 +2,11 @@ package geometry
 
 import (
 	Vec "diesel.com/diesel/vector"
+	"math"
+)
+
+const (
+	EPSILON = 0.001
 )
 
 //diesel geometry library - primarily for particle boundary collision detection
@@ -66,10 +71,7 @@ func (tri *Triangle) Normal() Vec.Vec32 {
 	return Vec.Normalize(N)
 }
 
-//Point Collision Test Function Wrapper
-//Projects a point P onto the reference triangle and determines
-//The Signed Distance and Whether the projection resulted in a barycentric
-//Coordinate
+//Barycentric Collission Test returns float32 distance, bool collision detected
 func (t *Triangle) Collision(P *Vec.Vec32) (float32, bool) {
 
 	//Measures if  a point projected into the triangles plane gives a barycentric coord
@@ -78,37 +80,62 @@ func (t *Triangle) Collision(P *Vec.Vec32) (float32, bool) {
 
 }
 
+//Computes Ray Triangle Collision with Plane Equation substitution and Boundary Test
+func (t *Triangle) RayTriCollision(point Vec.Vec32, vel Vec.Vec32) (float32, bool) {
+	t0 := t.Verts[0]
+	t1 := t.Verts[1]
+	t2 := t.Verts[2]
+	n := t.Normal()
+	nDotRay := float32(math.Abs(float64(n.Dot(vel))))
+	d := n.Dot(*t0)
+	k := n.Dot(point) + d
+	p0 := Vec.Add(point, Vec.Scale(vel, k))
+	dist := Vec.Length(Vec.Sub(point, p0))
+
+	//Ray Parallel || Ray Behind Plane
+	if nDotRay < EPSILON || k < 0 {
+		return -dist, false
+	}
+
+	e0 := Vec.Sub(*t1, *t0)
+	vp0 := Vec.Sub(point, *t0)
+	C := Vec.Cross(e0, vp0) //Vector Perpendicular to Triangle Plane
+
+	if n.Dot(C) < 0 { //P is on the right side
+		return dist, false
+	}
+	//Edge 2
+	e1 := Vec.Sub(*t2, *t1)
+	vp2 := Vec.Sub(point, *t2)
+	C1 := Vec.Cross(e1, vp2)
+	if n.Dot(C1) < 0 { //P is on the right side
+		return dist, false
+	}
+
+	return dist, true
+
+}
+
 //Given particle w/ velocity determine barycentric collisions and if a collision occurs
-func (g *Mesh) Collision(P *Vec.Vec32, V *Vec.Vec32, dt float32) (Vec.Vec32, bool) {
+//This code should be ray triangle intersection code similar to ray tracing
+func (g *Mesh) Collision(P Vec.Vec32, V Vec.Vec32, dt float32) (Vec.Vec32, bool) {
 
-	collision := false
 	VERTS := len(g.Vertexes)
-
-	//We search each triangle for each particle, this needs to be improved
-	//We could store triangles in their own spatial hash structure based on
-	//Triangle Origin and Hash the Particle Position to find the comparison bucket
+	dt = dt * 5.2 //Right now this is due to small time steps
 	for i := 0; i < VERTS; i += 3 {
 		triangle := InitTriangle(g.Vertexes[i], g.Vertexes[i+1], g.Vertexes[i+2])
-		nPos := Vec.Add(*P, Vec.Scale(*V, dt))
-		var dist float32
-		var bary bool
-		var ndist float32
-		var nbary bool
-		dist, bary = triangle.Collision(P)
-		ndist, nbary = triangle.Collision(&nPos)
+		nPos := Vec.Add(P, Vec.Scale(V, dt))
+		dist, bary := triangle.RayTriCollision(P, V)  //Valid Collision with First Coord
+		dist2, _ := triangle.RayTriCollision(nPos, V) //Collision with Second
 
-		//Barycentric with a Sign Change
-		if bary == true && nbary == true {
-			if dist-ndist >= dist || dist < 0.1 {
-				collision = true
-
-				normal := triangle.Normal()
-				return normal, collision
-			}
+		//First Point Collided Second Point Didn't
+		if bary == true && dist-dist2 >= dist {
+			normal := triangle.Normal()
+			return normal, true
 		}
 	}
 
-	return Vec.Vec32{}, collision
+	return Vec.Vec32{}, false
 }
 
 //Planar Projection Transform of a triangle onto a Normal Vector

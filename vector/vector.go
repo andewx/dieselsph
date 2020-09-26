@@ -117,7 +117,7 @@ func (v *Vec32) Sub(b Vec32) *Vec32 {
 
 //Cross Product
 func Cross(a Vec32, b Vec32) Vec32 {
-	g := Vec32{a[1]*b[2] - b[1]*a[2],
+	g := Vec32{a[1]*b[2] - a[2]*b[1],
 		a[2]*b[0] - b[2]*a[0],
 		a[0]*b[1] - b[0]*a[1]}
 
