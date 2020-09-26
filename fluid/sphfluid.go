@@ -247,10 +247,8 @@ func (fluid *SPHFluid) Collide(index int) {
 
 	if collis == true {
 		k_stiff := float32(0.85) //Restitution Coefficient. Further research req'd
-		reflectVel := fluid.Velocities[index].Reflect(normal)
-		fluid.Velocities[index] = *reflectVel
-		stiffVel := fluid.Velocities[index].Scale(k_stiff)
-		fluid.Velocities[index] = *stiffVel
+		fluid.Velocities[index] = V.Reflect(fluid.Velocities[index], normal)
+		fluid.Velocities[index].Scale(k_stiff)
 	}
 }
 

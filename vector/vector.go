@@ -180,8 +180,17 @@ func (v *Vec32) Proj(n Vec32) *Vec32 {
 }
 
 func (v *Vec32) Reflect(n Vec32) *Vec32 {
-	x := v.Sub(Scale(n, Dot(Scale(*v, 2.0), n)))
-	return x
+	b := Scale(n, (Dot(n, *v)*2.0)/(n.Length()*n.Length()))
+	nVec := Sub(*v, b)
+	v[0] = nVec[0]
+	v[1] = nVec[1]
+	v[2] = nVec[2]
+	return v
+}
+
+func Reflect(n Vec32, v Vec32) Vec32 {
+	b := Scale(n, (Dot(n, v)*2.0)/(n.Length()*n.Length()))
+	return Sub(v, b)
 }
 
 func (v *Vec32) equals(a Vec32) bool {

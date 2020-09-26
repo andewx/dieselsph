@@ -99,8 +99,9 @@ func (g *Mesh) Collision(P *Vec.Vec32, V *Vec.Vec32, dt float32) (Vec.Vec32, boo
 
 		//Barycentric with a Sign Change
 		if bary == true && nbary == true {
-			if dist-ndist > dist {
+			if dist-ndist >= dist || dist < 0.1 {
 				collision = true
+
 				normal := triangle.Normal()
 				return normal, collision
 			}

@@ -100,7 +100,7 @@ const (
 	H20Kern         = .125    //Smoothing Kernel
 	H20LiqDensity   = 0.001   //kg/cm^3
 	SOS             = 10.01   //m/s (maximal information transfer) 1480 m/s with sound
-	Particles       = 10      //15,625 Particles -- 1.9MB Positional Data Ram
+	Particles       = 2       //15,625 Particles -- 1.9MB Positional Data Ram
 	DefaultTimeStep = 0.1     //Evolution at Small Interval
 	EOSGamma        = 7.3     //Equation of State Exponent Feature
 	PCISamples      = 20
@@ -110,7 +110,7 @@ const (
 //Initializes Default Fluid Structure During Initialization
 func DefaultDslFl() *DslFlConfig {
 	//Syncs at 24 Frames with a 60FPS runtime. 0.041 Seconds
-	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -5.0}, 2.0, 0.1, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples}
+	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -5.0}, 2.0, 0.5, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples}
 }
 
 func RenderFluidGL(config *DslFlConfig) error {
