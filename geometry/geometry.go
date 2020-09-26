@@ -2,11 +2,11 @@ package geometry
 
 import (
 	Vec "diesel.com/diesel/vector"
-	"math"
+	Mgl "github.com/go-gl/mathgl/mgl32"
 )
 
 const (
-	EPSILON = 0.001
+	EPSILON = 0.000000001
 )
 
 //diesel geometry library - primarily for particle boundary collision detection
@@ -81,61 +81,82 @@ func (t *Triangle) Collision(P *Vec.Vec32) (float32, bool) {
 }
 
 //Computes Ray Triangle Collision with Plane Equation substitution and Boundary Test
-func (t *Triangle) RayTriCollision(point Vec.Vec32, vel Vec.Vec32) (float32, bool) {
+func (t *Triangle) RayTriCollision(point Vec.Vec32, vel Vec.Vec32) (float32, Vec.Vec32, bool) {
 	t0 := t.Verts[0]
 	t1 := t.Verts[1]
 	t2 := t.Verts[2]
 	n := t.Normal()
-	nDotRay := float32(math.Abs(float64(n.Dot(vel))))
+	nDotRay := n.Dot(vel)
+
+	//Parallel to plane No Intersection
+	if Mgl.Abs(nDotRay) < EPSILON {
+		return 0, Vec.Vec32{}, false
+	}
+
 	d := n.Dot(*t0)
-	k := n.Dot(point) + d
+	k := (n.Dot(point) + d) / nDotRay
 	p0 := Vec.Add(point, Vec.Scale(vel, k))
 	dist := Vec.Length(Vec.Sub(point, p0))
 
-	//Ray Parallel || Ray Behind Plane
-	if nDotRay < EPSILON || k < 0 {
-		return -dist, false
+	//Plane is behind the ray
+	if k < 0 {
+		return -dist, p0, false
 	}
+
+	//Edge 0 Test
 
 	e0 := Vec.Sub(*t1, *t0)
 	vp0 := Vec.Sub(point, *t0)
-	C := Vec.Cross(e0, vp0) //Vector Perpendicular to Triangle Plane
+	C0 := Vec.Cross(e0, vp0) //Vector Perpendicular to Triangle Plane
 
-	if n.Dot(C) < 0 { //P is on the right side
-		return dist, false
+	if n.Dot(C0) < 0 { //P is on the right side
+		return dist, p0, false
 	}
-	//Edge 2
+	//Edge 1
 	e1 := Vec.Sub(*t2, *t1)
-	vp2 := Vec.Sub(point, *t2)
-	C1 := Vec.Cross(e1, vp2)
+	vp1 := Vec.Sub(point, *t1)
+	C1 := Vec.Cross(e1, vp1)
+
 	if n.Dot(C1) < 0 { //P is on the right side
-		return dist, false
+		return dist, p0, false
 	}
 
-	return dist, true
+	//Edge 2
+	e2 := Vec.Sub(*t0, *t2)
+	vp2 := Vec.Sub(point, *t2)
+	C2 := Vec.Cross(e2, vp2)
+
+	if n.Dot(C2) < 0 {
+		return dist, p0, false
+	}
+
+	return dist, p0, true
 
 }
 
 //Given particle w/ velocity determine barycentric collisions and if a collision occurs
 //This code should be ray triangle intersection code similar to ray tracing
-func (g *Mesh) Collision(P Vec.Vec32, V Vec.Vec32, dt float32) (Vec.Vec32, bool) {
+func (g *Mesh) Collision(P Vec.Vec32, V Vec.Vec32, ProjVel Vec.Vec32, dt float32) (Vec.Vec32, Vec.Vec32, bool) {
 
 	VERTS := len(g.Vertexes)
-	dt = dt * 5.2 //Right now this is due to small time steps
 	for i := 0; i < VERTS; i += 3 {
 		triangle := InitTriangle(g.Vertexes[i], g.Vertexes[i+1], g.Vertexes[i+2])
-		nPos := Vec.Add(P, Vec.Scale(V, dt))
-		dist, bary := triangle.RayTriCollision(P, V)  //Valid Collision with First Coord
-		dist2, _ := triangle.RayTriCollision(nPos, V) //Collision with Second
+		n := triangle.Normal()
 
-		//First Point Collided Second Point Didn't
-		if bary == true && dist-dist2 >= dist {
-			normal := triangle.Normal()
-			return normal, true
+		//Calculate Three Sets of possible interactions
+		P1 := Vec.Add(P, Vec.Scale(V, dt))                //First Projected Point
+		P2 := Vec.Add(P, Vec.Scale(ProjVel, dt))          //Second Projected Point
+		d0, p0, c0 := triangle.RayTriCollision(P, V)      //Valid Collision with First Coord
+		d1, _, _ := triangle.RayTriCollision(P1, V)       //Accelerations are problematic
+		d2, _, _ := triangle.RayTriCollision(P2, ProjVel) //Projected
+		//TODO Fix This
+		if c0 && (d0-d1 >= d0 || d0-d2 >= d0 || d0 < 0.1) {
+			return n, p0, true
 		}
+
 	}
 
-	return Vec.Vec32{}, false
+	return Vec.Vec32{}, Vec.Vec32{}, false
 }
 
 //Planar Projection Transform of a triangle onto a Normal Vector

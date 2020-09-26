@@ -18,6 +18,7 @@ require (
 	github.com/go-delve/delve v1.5.0 // indirect
 	github.com/go-gl/gl v0.0.0-20190320180904-bf2b1f2f34d7
 	github.com/go-gl/glfw v0.0.0-20200420212212-258d9bec320e
+	github.com/go-gl/mathgl v1.0.0
 	github.com/go-toolsmith/typep v1.0.2 // indirect
 	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golangci/gocyclo v0.0.0-20180528144436-0a533e8fa43d // indirect

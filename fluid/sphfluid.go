@@ -3,7 +3,7 @@ package fluid
 import (
 	G "diesel.com/diesel/geometry"
 	V "diesel.com/diesel/vector"
-	Math "math"
+	"math"
 )
 
 //SPHFluid structure: Holds relevant fluid particles, spatial grid, meshes
@@ -120,7 +120,7 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle) 
 	//Create Collider Mesh Box From List of triangles (12)
 	fluid.UpdateDensities()
 	//Time step dependent on propogation of particle collisions
-	fluid.Timer.TS = 0.4 * Math.Sqrt(float64((fluid.Mfp.Mass*fluid.Mfp.OuterRadius)/fluid.Mfp.SpeedSound))
+	fluid.Timer.TS = 0.4 * math.Sqrt(float64((fluid.Mfp.Mass*fluid.Mfp.OuterRadius)/fluid.Mfp.SpeedSound))
 }
 
 //Updates Densities associated with each particle position with Gaussian Kernel
@@ -243,13 +243,19 @@ func (fluid *SPHFluid) PressureEOS(i int, negativePressure float32) {
 //Test Particles Against Possible Mesh Collisions given a position and velocity
 func (fluid *SPHFluid) Collide(index int) {
 	//Resolve Particle Collisions
-	normal, collis := fluid.Colliders.Collision(fluid.Positions[index], fluid.Velocities[index], float32(fluid.Timer.TS))
+	projVelAccel := V.Scale(fluid.Forces[index], float32(fluid.Timer.TS)/fluid.Mfp.Mass)
+	projVel := V.Add(fluid.Velocities[index], projVelAccel)
+	normal, p0, collis := fluid.Colliders.Collision(fluid.Positions[index], fluid.Velocities[index], projVel, float32(fluid.Timer.TS))
 
 	if collis == true {
-		k_stiff := float32(0.85) //Restitution Coefficient. Further research req'd
-		refl := V.Reflect(fluid.Velocities[index], normal)
-		fluid.Velocities[index] = refl
-		fluid.Velocities[index].Scale(k_stiff)
+		k_stiff := float32(0.67) //Restitution Coefficient. Further research req'd
+		fluid.Positions[index] = p0
+		fluid.Velocities[index].Reflect(normal).Scale(k_stiff) //No Momentum Needed
+
+		if V.Length(fluid.Velocities[index]) <= 0.1 {
+			fluid.Velocities[index] = V.Vec32{}
+		}
+
 	}
 }
 
@@ -258,10 +264,6 @@ func (fluid *SPHFluid) Collide(index int) {
 //Utilizes MassFluidParticle description for Time.TS modifier.
 func (fluid *SPHFluid) Update(index int) error {
 
-	//DEBUG WATCH INDEX 0
-	if index == 0 {
-		fluid.Forces[index].Scale(1.0) //Do Nothing
-	}
 	fluid.Forces[index].Scale(float32(fluid.Timer.TS) / fluid.Mfp.Mass)
 	fluid.Velocities[index].Add(fluid.Forces[index])
 	fluid.Positions[index].Add(fluid.Velocities[index])
@@ -289,15 +291,16 @@ func (fluid *SPHFluid) Compute(threadStatus chan int, secondsAdvance float64) {
 
 		fluid.UpdateDensities()
 		for i := 0; i < FLUID; i++ {
+
 			//fluid.PressureEOS(i, 0.0) //Negative Pressure Scale 0
 			//fluid.Pressure(i)
 			//fluid.Viscosity(i)
 			fluid.External(i, EXTERNAL)
 			//Resolve Mesh Collisions
 			fluid.Collide(i)
-
 			//Update Particles and resolve forces
 			fluid.Update(i)
+
 			fluid.Timer.StepTime()
 
 			//Has Time Advanced Sufficiently

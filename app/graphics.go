@@ -41,6 +41,8 @@ type DieselContext struct {
 	ModeLoc        int32
 	Frames         int32
 	GLFWindow      *glfw.Window
+	VertexSRC      string
+	FragSRC        string
 }
 
 //Global Pointers :)))))))))))))) - Debugger Apparently Can't Handle This
@@ -68,11 +70,13 @@ func InitGLFW(a *AppWindow) *glfw.Window {
 }
 
 // initOpenGL initializes OpenGL and returns an intiialized program.
-func InitOpenGL(sph *F.SPHFluid) *DieselContext {
+func InitOpenGL(sph *F.SPHFluid) (*DieselContext, error) {
 
 	if err := gl.Init(); err != nil {
-		panic(err)
+		return nil, err
 	}
+
+	dslContext := DieselContext{}
 	version := gl.GoStr(gl.GetString(gl.VERSION))
 	log.Println("OpenGL version", version)
 
@@ -82,20 +86,35 @@ func InitOpenGL(sph *F.SPHFluid) *DieselContext {
 
 	//Easy Load Strings
 	sourceVTX, err := ioutil.ReadFile(vtxFile)
-	checkError(err)
+	if checkError(err) {
+		return nil, err
+	}
 	sourceFRG, err := ioutil.ReadFile(frgFile)
-	checkError(err)
+	if checkError(err) {
+		return nil, err
+	}
+
+	dslContext.VertexSRC = string(sourceVTX)
+	dslContext.FragSRC = string(sourceFRG)
 
 	//Handled by local function compile Shader
-	vtxSHO, err := compileShader(string(sourceVTX), gl.VERTEX_SHADER)
-	checkError(err)
-	frgSHO, err := compileShader(string(sourceFRG), gl.FRAGMENT_SHADER)
-	checkError(err)
+	vtxSHO, err := compileShader(dslContext.VertexSRC, gl.VERTEX_SHADER)
+	if checkError(err) {
+		return nil, err
+	}
+	frgSHO, err := compileShader(dslContext.FragSRC, gl.FRAGMENT_SHADER)
+	if checkError(err) {
+		return nil, err
+	}
 
 	prog1 := gl.CreateProgram()
 	gl.AttachShader(prog1, vtxSHO)
 	gl.AttachShader(prog1, frgSHO)
 	gl.LinkProgram(prog1)
+
+	//Free up context Strings
+	//dslContext.VertexSRC = ""
+	//	dslContext.FragSRC = ""
 
 	//Generate Diesel Context which includes cameras an stuff
 	n := float32(1.3)
@@ -110,7 +129,7 @@ func InitOpenGL(sph *F.SPHFluid) *DieselContext {
 	model := V.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1} //identity
 	view := V.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}
 	proj := V.ProjectionMatrix(l, r, t, b, n, f)
-	dslContext := DieselContext{}
+
 	dslContext.Cam = GlobalCamera
 	dslContext.Model = &model
 	dslContext.View = &view
@@ -132,7 +151,7 @@ func InitOpenGL(sph *F.SPHFluid) *DieselContext {
 
 	fmt.Printf("OpenGL Initiated\n")
 	//Pass uint32
-	return &dslContext
+	return &dslContext, nil
 }
 
 func Draw(sph *F.SPHFluid, dsl *DieselContext, anim *AnimationTimer, interval float64, c chan int) {
@@ -213,19 +232,18 @@ func MakeVAO(sph *F.SPHFluid, dsl *DieselContext) {
 
 }
 
-func checkError(err error) {
+func checkError(err error) bool {
 	if err != nil {
 		fmt.Printf(err.Error())
-		panic(err)
+		return true
 	}
+	return false
 }
 
 func compileShader(source string, shaderType uint32) (uint32, error) {
 	shader := gl.CreateShader(shaderType)
-
 	csources, free := gl.Strs(source)
 	gl.ShaderSource(shader, 1, csources, nil)
-	free()
 	gl.CompileShader(shader)
 
 	var status int32
@@ -236,8 +254,8 @@ func compileShader(source string, shaderType uint32) (uint32, error) {
 
 		log := strings.Repeat("\x00", int(logLength+1))
 		gl.GetShaderInfoLog(shader, logLength, nil, gl.Str(log))
-
-		return 0, fmt.Errorf("failed to compile %v: %v", source, log)
+		free()
+		return 0, fmt.Errorf("GLSL Shader failed to compile\n: %v", log)
 	}
 
 	return shader, nil

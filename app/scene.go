@@ -13,7 +13,7 @@ import (
 //Features List and Render Routines (Not Implemented Yet)
 const (
 
-	//Diesel Attribute Pointer Locations for VAO access
+	//Diesel Attribute Pointer Locations for VAO acce
 	DSL_VERTEX   = 0
 	DSL_INDICE   = 1
 	DSL_NORMAL   = 2
@@ -107,10 +107,10 @@ const (
 	SPHSamples      = 10
 )
 
-//Initializes Default Fluid Structure During Initialization
+//Initializes Default Fluisd Structure During Initialization
 func DefaultDslFl() *DslFlConfig {
 	//Syncs at 24 Frames with a 60FPS runtime. 0.041 Seconds
-	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -5.0}, 2.0, 0.5, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples}
+	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -5.0}, 2.0, 0.8, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples}
 }
 
 func RenderFluidGL(config *DslFlConfig) error {
@@ -132,7 +132,10 @@ func RenderFluidGL(config *DslFlConfig) error {
 	runtime.LockOSThread()
 	window := InitGLFW(&glWindowProperties)
 	defer glfw.Terminate()
-	dieselContext := InitOpenGL(thisFluid.SPH) //Bind buffers to Initialized Fluid Block.
+	dieselContext, err := InitOpenGL(thisFluid.SPH) //Bind buffers to Initialized Fluid Block.
+	if checkError(err) {
+		return err
+	}
 	dieselContext.GLFWindow = window
 	thisFluid.Context = dieselContext
 	window.SetKeyCallback(ProcessInput)
