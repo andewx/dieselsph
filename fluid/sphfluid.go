@@ -120,7 +120,7 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle) 
 	//Create Collider Mesh Box From List of triangles (12)
 	fluid.UpdateDensities()
 	//Time step dependent on propogation of particle collisions
-	fluid.Timer.TS = 0.01 //(fluid.Mfp.InnerRadius * 0.4) / (fluid.Mfp.SpeedSound) //Time Step Per Iteration
+	fluid.Timer.TS = 1 //(fluid.Mfp.InnerRadius * 0.4) / (fluid.Mfp.SpeedSound) //Time Step Per Iteration
 }
 
 //Updates Densities associated with each particle position with Gaussian Kernel
