@@ -117,7 +117,7 @@ func InitOpenGL(sph *F.SPHFluid) (*DieselContext, error) {
 	//	dslContext.FragSRC = ""
 
 	//Generate Diesel Context which includes cameras an stuff
-	n := float32(1.3)
+	n := float32(1.0)
 	f := float32(100.0)
 	r := float32(20.0)
 	l := float32(-20.0)
@@ -192,7 +192,7 @@ func Draw(sph *F.SPHFluid, dsl *DieselContext, anim *AnimationTimer, interval fl
 	gl.UniformMatrix4fv(dsl.ProjShaderLoc[0], 1, false, &dsl.Proj[0])
 	gl.Uniform1i(dsl.ModeLoc, 0) // Draw opaque particles
 
-	gl.PointSize(3.0)
+	gl.PointSize(5.0)
 
 	//Bind Particles & Draw
 	gl.BindVertexArray(dsl.VAO[0])

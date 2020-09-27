@@ -75,7 +75,7 @@ type BoxFluidSystem struct {
 //-----------------------------------------------------------------------------
 //Initialize does heavy lifting of setting up the Grid Data and Computing Initial
 //Particle Densities
-func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle) {
+func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle, initialVelocity V.Vec32) {
 
 	//Initialize Particles
 	fluid.Count = init.WidthCells * init.HeightCells * init.DepthCells
@@ -100,6 +100,7 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle) 
 	fluid.SPHGrid = AllocateGridUserDefined(init.Width, 7) //Constructs a cubic grid the 7 constant needs to be change
 
 	//Initialize Particle Positions and Stuff
+
 	for i := 0; i < init.WidthCells; i++ {
 		for j := 0; j < init.HeightCells; j++ {
 			for k := 0; k < init.DepthCells; k++ {
@@ -108,7 +109,15 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle) 
 				kf32 := float32(k)
 				nPos := V.Vec32{float32(minW + wStep*if32), float32(minH + hStep*jf32), float32(minD + dStep*kf32)} //removed wStep , dSteh, hStep
 				index := i*init.WidthCells*init.HeightCells + int(j*init.HeightCells) + int(k)
+
+				if index%2 == 0 {
+					nPos[0] = float32(minW + wStep/2 + (wStep)*if32)
+					nPos[1] = float32(minH + hStep/2 + (hStep)*jf32)
+					nPos[2] = float32(minD + dStep/2 + (dStep)*kf32)
+				}
+
 				fluid.Positions[index] = nPos
+				fluid.Velocities[index] = initialVelocity
 			}
 		}
 	} //End Particle Init
@@ -136,10 +145,11 @@ func (fluid *SPHFluid) UpdateDensities() {
 		density := float32(0.0)
 		for j := 0; j < nCollide; j++ {
 			dist := V.Length(V.Sub(fluid.Positions[i], fluid.Positions[samples[j].Index]))
-			density += mass * float32(fluid.ItrpKernel.F(dist))
+			density += mass * float32(fluid.GradKernel.F(dist))
 		}
-
-		fluid.Densities[i] = mass * density
+		if !math.IsNaN(float64(density)) {
+			fluid.Densities[i] = density
+		}
 	}
 }
 
@@ -154,13 +164,16 @@ func (fluid *SPHFluid) DensityGradient(i int) V.Vec32 {
 	iDensity := fluid.Densities[i]
 
 	for j := 0; j < nCount; j++ {
-		jDensity := fluid.Densities[samples[j].Index]
-		dir := V.Sub(fluid.Positions[samples[j].Index], fluid.Positions[i])
-		dist := V.Length(dir)
-		dir = V.Scale(dir, 1/dist)
-		grad := fluid.ItrpKernel.Grad(dist, &dir)
-		estm := (mass / iDensity) + (mass / jDensity)
-		DensityGrad.Add(V.Scale(grad, -estm))
+		jIndex := samples[j].Index
+		if jIndex != i {
+			jDensity := fluid.Densities[samples[j].Index]
+			dir := V.Sub(fluid.Positions[samples[j].Index], fluid.Positions[i])
+			dist := V.Length(dir)
+			dir = V.Scale(dir, 1/dist)
+			grad := fluid.GradKernel.Grad(dist, &dir)
+			estm := (mass / iDensity) + (mass / jDensity)
+			DensityGrad.Add(V.Scale(grad, -estm))
+		}
 	}
 
 	return DensityGrad
@@ -179,14 +192,16 @@ func (fluid *SPHFluid) Pressure(i int) {
 	F := float32(0.0)
 
 	for j := 0; j < nCount; j++ {
-
-		jDensity := fluid.Densities[samples[j].Index]
-		dir := V.Sub(fluid.Positions[samples[j].Index], fluid.Positions[i])
-		dist := V.Length(dir)
-		dir = V.Scale(dir, 1/dist) //Normalize
-		grad := fluid.GradKernel.Grad(dist, &dir)
-		F = (msq * ((fluid.Pressures[i] / dens * dens) + (fluid.Pressures[samples[j].Index] / jDensity * jDensity)))
-		fluid.Forces[i].Add(V.Scale(grad, -F))
+		jIndex := samples[j].Index
+		if jIndex != i {
+			jDensity := fluid.Densities[samples[j].Index]
+			dir := V.Sub(fluid.Positions[samples[j].Index], fluid.Positions[i])
+			dist := V.Length(dir)
+			dir = V.Scale(dir, 1/dist) //Normalize
+			grad := fluid.GradKernel.Grad(dist, &dir)
+			F = (msq * ((fluid.Pressures[i] / dens * dens) + (fluid.Pressures[samples[j].Index] / jDensity * jDensity)))
+			fluid.Forces[i].Add(V.Scale(grad, -F))
+		}
 
 	}
 
@@ -204,14 +219,20 @@ func (fluid *SPHFluid) Viscosity(i int) {
 	vi := fluid.Velocities[i]
 
 	for j := 0; j < nCount; j++ {
-		vj := fluid.Velocities[samples[j].Index]
-		jDensity := fluid.Densities[samples[j].Index]
+		jIndex := samples[j].Index
+		if jIndex != i {
+			vj := fluid.Velocities[samples[j].Index]
+			jDensity := fluid.Densities[samples[j].Index]
 
-		coeff_vec := V.Scale(V.Sub(vj, vi), 1/jDensity)
-		dist := fluid.Positions[i].Distance(fluid.Positions[samples[j].Index])
-		lap := fluid.GradKernel.O2D(dist)
-		force := V.Scale(coeff_vec, fluid.Mfp.Viscosity*mass*lap)
-		fluid.Forces[i].Add(force)
+			//Check the Density
+			if !math.IsNaN(float64(jDensity)) || jDensity != 0 {
+				coeff_vec := V.Scale(V.Sub(vj, vi), 0.00091/jDensity)
+				dist := fluid.Positions[i].Distance(fluid.Positions[samples[j].Index])
+				lap := fluid.GradKernel.O2D(dist)
+				force := V.Scale(coeff_vec, mass*mass*lap)
+				fluid.Forces[i].Add(force)
+			}
+		}
 	}
 
 	return
@@ -229,33 +250,55 @@ func (fluid *SPHFluid) External(i int, f V.Vec32) {
 func (fluid *SPHFluid) PressureEOS(i int, negativePressure float32) {
 	//sos := fluid.Mfp.SpeedSound
 	exp := fluid.Mfp.EosExp
-	tgt := fluid.Mfp.TargetDensity
+	tgt := fluid.Mfp.Mass
+	k := (fluid.Mfp.Mass * fluid.Mfp.SpeedSound) / (fluid.Mfp.EosExp * 150)
 	density := fluid.Densities[i]
-	eosScale := float32(0.99) //tgt * ((sos * sos) / exp)
-	g := density/tgt - 1.0
-	p := eosScale / (exp * g)
-	if p < 0 {
-		p *= negativePressure //Negative Pressure Scaling
+	if density > 0.00001 {
+		//Don't Allow Negative Density
+		g := k * ((density / tgt) - 1.0)
+		p := float32(math.Pow(float64(g), float64(exp)))
+		if p < 0 {
+			p *= negativePressure //Negative Pressure Scaling
+		}
+		if !math.IsNaN(float64(p)) {
+			fluid.Pressures[i] = p
+		}
 	}
-	fluid.Pressures[i] = p
 }
 
 //Test Particles Against Possible Mesh Collisions given a position and velocity
 func (fluid *SPHFluid) Collide(index int) {
 	//Resolve Particle Collisions
-	projVelAccel := V.Scale(fluid.Forces[index], float32(fluid.Timer.TS)/fluid.Mfp.Mass)
-	projVel := V.Add(fluid.Velocities[index], projVelAccel)
-	normal, p0, collis := fluid.Colliders.Collision(fluid.Positions[index], fluid.Velocities[index], projVel, float32(fluid.Timer.TS))
 
+	normal, _, collis := fluid.Colliders.Collision(fluid.Positions[index], fluid.Velocities[index], float32(fluid.Timer.TS))
+	vel := fluid.Velocities[index]
 	if collis == true {
-		k_stiff := float32(0.67) //Restitution Coefficient. Further research req'd
-		fluid.Positions[index] = p0
-		fluid.Velocities[index].Reflect(normal).Scale(k_stiff) //No Momentum Needed
+		k_stiff := float32(0.32) //Restitution Coefficient. Further research req'd
+		friction := float32(0.025)
+		//fluid.Positions[index] = p0
+		//	fmomentum := V.Scale(fluid.Velocities[index], fluid.Mfp.Mass*float32(fluid.Timer.TS))
+		velN := V.Scale(normal, V.Dot(normal, vel))
+		velTan := V.Sub(vel, velN)
+		dtVN := V.Scale(velN, (-k_stiff - 1.0))
+		velN = V.Scale(velN, -k_stiff)
 
-		if V.Length(fluid.Velocities[index]) <= 0.1 {
-			fluid.Velocities[index] = V.Vec32{}
+		if V.Length(velTan) > 0.0 {
+			fcomp := float64(1.0 - friction*V.Length(dtVN)/V.Length(velTan))
+			frictionScale := float32(math.Max(fcomp, 0.0))
+			velTan = V.Scale(velTan, frictionScale)
 		}
 
+		nVelocity := V.Add(velN, velTan)
+		fluid.Velocities[index] = nVelocity
+
+		//Oppose force
+		fluid.Forces[index].Scale(-1.0)
+
+		//Create a resting mass when velocities are near 0
+		velMag := V.Length(fluid.Velocities[index])
+		if velMag < 0.00001 {
+			fluid.Velocities[index].Scale(0.0)
+		}
 	}
 }
 
@@ -269,9 +312,8 @@ func (fluid *SPHFluid) Update(index int) error {
 	fluid.Positions[index].Add(fluid.Velocities[index])
 
 	//Clear Particle Force State
-	fluid.Forces[index][0] = float32(0.0)
-	fluid.Forces[index][1] = float32(0.0)
-	fluid.Forces[index][2] = float32(0.0)
+	fluid.Forces[index] = V.Vec32{0.0, 0.0, 0.0}
+	fluid.Densities[index] = fluid.Mfp.Mass
 
 	return nil
 }
@@ -292,30 +334,28 @@ func (fluid *SPHFluid) Compute(threadStatus chan int, secondsAdvance float64) {
 		fluid.UpdateDensities()
 		for i := 0; i < FLUID; i++ {
 
-			//fluid.PressureEOS(i, 0.0) //Negative Pressure Scale 0
-			//fluid.Pressure(i)
-			//fluid.Viscosity(i)
+			fluid.PressureEOS(i, 0.1) //Negative Pressure Scale 0
+			fluid.Pressure(i)
+			fluid.Viscosity(i)
 			fluid.External(i, EXTERNAL)
 			//Resolve Mesh Collisions
 			fluid.Collide(i)
 			//Update Particles and resolve forces
 			fluid.Update(i)
 
-			fluid.Timer.StepTime()
-
-			//Has Time Advanced Sufficiently
-			//If so send channel message so parent thread can update buffers
-			if fluid.Timer.T >= secondsAdvance && i == FLUID-1 {
-				threadStatus <- 20 //FLUID_THREAD_SYNCED SEND SIGNAL TO UPDATE
-				fluid.Timer.T = 0.0
-				fluid.Timer.TIMELAST = 0.0
-				status := <-threadStatus //Block and Wait for Signal
-				if status == 20 {
-					//Note that we had to finish processing the entire block in the thread
-					//Otherwise we were continuously blocking
-				}
-			}
-
 		}
+		fluid.Timer.StepTime()
+		//Has Time Advanced Sufficiently
+		//If so send channel message so parent thread can update buffers
+
+		threadStatus <- 20 //FLUID_THREAD_SYNCED SEND SIGNAL TO UPDATE
+		fluid.Timer.T = 0.0
+		fluid.Timer.TIMELAST = 0.0
+		status := <-threadStatus //Block and Wait for Signal
+		if status == 20 {
+			//Note that we had to finish processing the entire block in the thread
+			//Otherwise we were continuously blocking
+		}
+
 	}
 }

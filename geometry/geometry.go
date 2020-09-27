@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	EPSILON = 0.000000001
+	EPSILON = 0.00001
 )
 
 //diesel geometry library - primarily for particle boundary collision detection
@@ -16,6 +16,9 @@ const (
 
 //These are for software object management and not yet being handled as single point buffer arrays for GPU
 //Ideally the physics is handled by gl vertex shaders
+
+//SPH Collision depends on Clockwise Winded Triangles -- Tried to make it agnostic to the orientation of the Normal
+// By flipping based on position but it just wasn't working
 
 type Triangle struct {
 	Verts [3]*Vec.Vec32
@@ -81,43 +84,71 @@ func (t *Triangle) Collision(P *Vec.Vec32) (float32, bool) {
 }
 
 //Computes Ray Triangle Collision with Plane Equation substitution and Boundary Test
-func (t *Triangle) RayTriCollision(point Vec.Vec32, vel Vec.Vec32) (float32, Vec.Vec32, bool) {
+func (t *Triangle) RayTriCollision(point Vec.Vec32, vel Vec.Vec32, n Vec.Vec32, dt float32) (float32, Vec.Vec32, bool) {
 	t0 := t.Verts[0]
 	t1 := t.Verts[1]
 	t2 := t.Verts[2]
-	n := t.Normal()
-	nDotRay := n.Dot(vel)
+
+	//Sanitize the Normal with respect to point position
+	pt2Vtx := Vec.Sub(point, *t1)
+	dotP2X := Vec.Dot(n, pt2Vtx)
+
+	if dotP2X >= 0 {
+		n.Scale(-1.0)
+	}
+
+	nDotRay := Vec.Dot(n, vel)
 
 	//Parallel to plane No Intersection
 	if Mgl.Abs(nDotRay) < EPSILON {
 		return 0, Vec.Vec32{}, false
 	}
 
-	d := n.Dot(*t0)
-	k := (n.Dot(point) + d) / nDotRay
+	//Intersection Dynamics for our point
+	d := Vec.Dot(n, *t0)
+	k := (Vec.Dot(n, point) + d) / nDotRay
 	p0 := Vec.Add(point, Vec.Scale(vel, k))
 	dist := Vec.Length(Vec.Sub(point, p0))
 
-	//Plane is behind the ray
-	if k < 0 {
-		return -dist, p0, false
+	p1 := Vec.Add(point, Vec.Scale(vel, (dt))) //dt fluids small
+
+	//Snap P1 to the Plane If within Bounding Region
+	p1Dist := Vec.Length(Vec.Sub(p0, p1))
+
+	//If we're within SOS collision time factor
+	if p1Dist < Vec.Length(vel)*dt { //Should just be a few milliseconds
+		p1 = Vec.Add(p0, Vec.Scale(vel, dt))
+	}
+	dir2Plane := Vec.Sub(p0, p1)
+
+	//Check that point crosses the Plane
+	p0Trans := Vec.Add(point, dir2Plane) //Point Near Plane if dir2Plane is
+	dist2 := Vec.Length(Vec.Sub(p0, p0Trans))
+
+	//If directions are opposite dot < 0 (general)
+	if dist2 < dist && Vec.Dot(n, dir2Plane) > 0 { //Point Was only moved closer
+		return dist, p0, false
 	}
 
+	//Plane has been crossed
+
+	//At this point the point has crossed the plane
+	//We need to check if it was within the bounds with an edge test of all three edges
 	//Edge 0 Test
 
 	e0 := Vec.Sub(*t1, *t0)
 	vp0 := Vec.Sub(point, *t0)
 	C0 := Vec.Cross(e0, vp0) //Vector Perpendicular to Triangle Plane
 
-	if n.Dot(C0) < 0 { //P is on the right side
+	if Vec.Dot(n, C0) > 0 { //P is on the right side
 		return dist, p0, false
 	}
-	//Edge 1
+
 	e1 := Vec.Sub(*t2, *t1)
 	vp1 := Vec.Sub(point, *t1)
 	C1 := Vec.Cross(e1, vp1)
 
-	if n.Dot(C1) < 0 { //P is on the right side
+	if Vec.Dot(n, C1) > 0 { //P is on the right side
 		return dist, p0, false
 	}
 
@@ -126,7 +157,7 @@ func (t *Triangle) RayTriCollision(point Vec.Vec32, vel Vec.Vec32) (float32, Vec
 	vp2 := Vec.Sub(point, *t2)
 	C2 := Vec.Cross(e2, vp2)
 
-	if n.Dot(C2) < 0 {
+	if Vec.Dot(n, C2) > 0 {
 		return dist, p0, false
 	}
 
@@ -136,21 +167,17 @@ func (t *Triangle) RayTriCollision(point Vec.Vec32, vel Vec.Vec32) (float32, Vec
 
 //Given particle w/ velocity determine barycentric collisions and if a collision occurs
 //This code should be ray triangle intersection code similar to ray tracing
-func (g *Mesh) Collision(P Vec.Vec32, V Vec.Vec32, ProjVel Vec.Vec32, dt float32) (Vec.Vec32, Vec.Vec32, bool) {
+func (g *Mesh) Collision(P Vec.Vec32, V Vec.Vec32, dt float32) (Vec.Vec32, Vec.Vec32, bool) {
 
 	VERTS := len(g.Vertexes)
 	for i := 0; i < VERTS; i += 3 {
 		triangle := InitTriangle(g.Vertexes[i], g.Vertexes[i+1], g.Vertexes[i+2])
 		n := triangle.Normal()
 
-		//Calculate Three Sets of possible interactions
-		P1 := Vec.Add(P, Vec.Scale(V, dt))                //First Projected Point
-		P2 := Vec.Add(P, Vec.Scale(ProjVel, dt))          //Second Projected Point
-		d0, p0, c0 := triangle.RayTriCollision(P, V)      //Valid Collision with First Coord
-		d1, _, _ := triangle.RayTriCollision(P1, V)       //Accelerations are problematic
-		d2, _, _ := triangle.RayTriCollision(P2, ProjVel) //Projected
-		//TODO Fix This
-		if c0 && (d0-d1 >= d0 || d0-d2 >= d0 || d0 < 0.1) {
+		_, p0, c0 := triangle.RayTriCollision(P, V, n, dt) //Valid Collision with First Coord
+
+		//Collision
+		if c0 {
 			return n, p0, true
 		}
 
@@ -248,8 +275,8 @@ func Box(w float32, h float32, d float32, o Vec.Vec32) *Mesh {
 	Verts[14] = Vec.Vec32{x + p, y - q, z - s} //RBB
 
 	Verts[15] = Vec.Vec32{x - p, y - q, z + s} //LFB
-	Verts[16] = Vec.Vec32{x + p, y - q, z + s} //RFB
-	Verts[17] = Vec.Vec32{x + p, y - q, z - s} //RBB
+	Verts[16] = Vec.Vec32{x + p, y - q, z - s} //RBB
+	Verts[17] = Vec.Vec32{x + p, y - q, z + s} //RFB
 
 	//Top FACE - Y
 	Verts[18] = Vec.Vec32{x - p, y + q, z + s} //LFT
@@ -257,17 +284,17 @@ func Box(w float32, h float32, d float32, o Vec.Vec32) *Mesh {
 	Verts[20] = Vec.Vec32{x + p, y + q, z - s} //RBT
 
 	Verts[21] = Vec.Vec32{x - p, y + q, z + s} //LFT
-	Verts[22] = Vec.Vec32{x + p, y + q, z + s} //RFT
-	Verts[23] = Vec.Vec32{x + p, y + q, z - s} //RBT
+	Verts[22] = Vec.Vec32{x + p, y + q, z - s} //RBT
+	Verts[23] = Vec.Vec32{x + p, y + q, z + s} //RFT
 
 	//LEFT FACE - X
-	Verts[24] = Vec.Vec32{x - p, y + q, z + s} //LFT
-	Verts[25] = Vec.Vec32{x - p, y - q, z + s} //LFB
-	Verts[26] = Vec.Vec32{x - p, y - q, z - s} //LBB
+	Verts[24] = Vec.Vec32{x - p, y - q, z - s} //LBB
+	Verts[25] = Vec.Vec32{x - p, y + q, z + s} //LFT
+	Verts[26] = Vec.Vec32{x - p, y - q, z + s} //LFB
 
-	Verts[27] = Vec.Vec32{x - p, y + q, z + s} //LFT
-	Verts[28] = Vec.Vec32{x - p, y + q, z - s} //LFB
-	Verts[29] = Vec.Vec32{x - p, y - q, z - s} //LBB
+	Verts[27] = Vec.Vec32{x - p, y - q, z - s} //LBB
+	Verts[28] = Vec.Vec32{x - p, y + q, z + s} //LFT
+	Verts[29] = Vec.Vec32{x - p, y + q, z - s} //LFB
 
 	//Right FACE - X
 	Verts[30] = Vec.Vec32{x + p, y + q, z + s} //LFT
@@ -282,56 +309,3 @@ func Box(w float32, h float32, d float32, o Vec.Vec32) *Mesh {
 	return &boxMesh
 
 }
-
-//We  ill use the Displacement Vector Formulation In Order to Calculate Barycentric Coordinates
-//This eliminates the need for Projecting Vectors
-/*
-func (tri * Triangle)Barycentric(p *Vec.Vec32)(*Vec.Vec32 ,float32){
-
-  //Perform V0 Origin Transform
-  T := tri.Origin()
-  P := Vec.Normalize(p.Sub(*tri))
-  A := Vec.Normalize(T)
-  B := Vec.Normalize(T)
-  C := Vec.Normalize(T)
-  //Project our Point into the Plane of our triangle
-  N := Vec.Cross(*C,*B)
-  PROJ :=Vec.Proj(*P,N)
-
-  DISTANCE := P.Sub(PROJ).Length()
-  //Dispalne Vectors in this space calculated as |PQ|^2 = (Q-P)*Q-P
-  //Calculate Triangle Displacements
-  a := A.Sub(*B)
-  al := a.Dot(*a)
-  b := B.Sub(*C)
-  bl := b.Dot(*b)
-  c := C.Sub(*A)
-  cl := c.Dot(*c)
-  //Point to Edge Displacements
-  da := PROJ.Sub(*a)
-  dal := da.Dot(*da)
-  db := PROJ.Sub(*b)
-  dbl := db.Dot(*db)
-  dc := PROJ.Sub(*c)
-  dcl := dc.Dot(*dc)
-  //Form 3 x 3 matrix
-  Mat3 := Vec.Mat3{}
-  Mat3[0] = -cl
-  Mat3[1] = cl
-  Mat3[2] = bl-al
-  Mat3[3] = -bl
-  Mat3[4] = cl-al
-  Mat3[5] = bl
-  Mat3[6] = 1
-  Mat3[7] = 1
-  Mat3[8] = 1
-  //Distance Vectors
-  DVec := Vec.Vec32{dal-dbl, dal-dcl, 1.0}
-  //Mat 3x 3 Inverse Calcula
-  Inv := Mat3.Inverse()
-  RVec,_ := Inv.CrossVec(&DVec)
-  return  RVec, DISTANCE
-
-
-}
-*/
