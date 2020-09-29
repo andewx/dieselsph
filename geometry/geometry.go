@@ -283,9 +283,9 @@ func Box(w float32, h float32, d float32, o Vec.Vec32) *Mesh {
 	Verts[19] = Vec.Vec32{x - p, y + q, z - s} //LBT
 	Verts[20] = Vec.Vec32{x + p, y + q, z - s} //RBT
 
-	Verts[21] = Vec.Vec32{x - p, y + q, z - s} //LBT
-	Verts[22] = Vec.Vec32{x + p, y + q, z - s} //RBT
-	Verts[23] = Vec.Vec32{x + p, y + q, z + s} //RFT
+	Verts[21] = Vec.Vec32{x + p, y + q, z - s} //RBT
+	Verts[22] = Vec.Vec32{x + p, y + q, z + s} //RFT
+	Verts[23] = Vec.Vec32{x - p, y + q, z + s} //LFT
 
 	//LEFT FACE - X
 	Verts[24] = Vec.Vec32{x - p, y - q, z + s} //LFB

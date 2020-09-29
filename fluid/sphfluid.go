@@ -123,7 +123,7 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle, 
 
 	fluid.Colliders = G.Box(init.Width, init.Height, init.Depth, init.Origin) //Initialize Collider Box
 	//Initiate Sampler from particle data
-	fluid.Sampler = sampler.SPHSampler(40, fluid.Positions)
+	fluid.Sampler = sampler.SPHSampler(20, fluid.Positions)
 	fluid.UpdateDensities() //Baseline density calculation
 	//Time step dependent on propogation of particle collisions
 	fluid.Timer.TS = 0.4 * math.Sqrt(float64((fluid.Mfp.Mass*fluid.Mfp.OuterRadius)/fluid.Mfp.SpeedSound))

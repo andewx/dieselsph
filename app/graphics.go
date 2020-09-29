@@ -161,6 +161,7 @@ func Draw(sph *F.SPHFluid, dsl *DieselContext, anim *AnimationTimer, interval fl
 	//fps := 1 / elapse_s
 
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+	gl.ClearColor(0.9, 0.9, 0.9, 1.0)
 	gl.UseProgram(dsl.PrgID[0])
 
 	//Set uniforms

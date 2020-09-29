@@ -113,7 +113,7 @@ const (
 //Initializes Default Fluisd Structure During Initialization
 func DefaultDslFl() *DslFlConfig {
 	//Syncs at 24 Frames with a 60FPS runtime. 0.041 Seconds
-	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -3.5}, 1.0, 0.2, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{-0.009, 0, 0}}
+	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -3.5}, 1.0, 0.2, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{-0.019, 0, 0}}
 }
 
 func RenderFluidGL(config *DslFlConfig) error {
@@ -155,6 +155,7 @@ func (this *DSLFluidRenderer) Run() {
 	spdinterval := float64(0.09) //Sync Every 2.0 Seconds
 	densityinterval := float64(0.01)
 
+	//Thread Most of the Fluid Routines // For Example Collision // Density Updates Etc
 	go this.SPH.Compute(fluidStatus, this.Config.PrtlInterval)
 	go this.SPH.Sampler.Run(samplerStatus)
 	go this.SPH.ComputeDensities(densityStatus)
