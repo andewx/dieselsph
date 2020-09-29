@@ -45,9 +45,10 @@ const (
 	//Concurrency Sync
 	FLUID_THREAD_SYNCED  = 20 //Fluid Thread Paused & Caught Up
 	FLUID_THREAD_WORKING = 21 //Fluid Thread processing
-	SHG_THREAD_SYNCED    = 22 // Spatial Hash Grid Thread Synced
-	SHG_THREAD_WORKING   = 23 //Spatial Hash Grid Thread Working.
-
+	SPD_THREAD_SYNCED    = 61 // Spatial Hash Grid Thread Synced
+	SPD_THREAD_RUN       = 60 //Spatial Hash Grid Thread Working.
+	DENSITY_THREAD_RUN   = 100
+	DENSITY_THREAD_WAIT  = 101
 )
 
 //Our configuration sturction for Initialization of the Renderer Duplicates Fluid Parameters so we can pass them
@@ -75,7 +76,8 @@ type AnimationTimer struct {
 	AppStart         time.Time //Time Application Started Secionds
 	CurrentTime      time.Time //Last Polled Time
 	LastParticleSync time.Time //Last Time Particles Were Sync'd
-	LastGridSync     time.Time //Last Time Grid Was synced.
+	LastSamplerSync  time.Time
+	LastDensitySync  time.Time
 }
 
 //A Scene Graph Type Object Holds the Key Buffers. The Fluid Particle Buffer
@@ -101,7 +103,7 @@ const (
 	H20Kern         = 1.3      //Smoothing Kernel
 	H20LiqDensity   = 0.001    //kg/cm^3
 	SOS             = 1400.0   //m/s (maximal information transfer) 1480 m/s with sounds
-	Particles       = 15       //15,625 Particles -- 1.9MB Positional Data Ram
+	Particles       = 20       //15,625 Particles -- 1.9MB Positional Data Ram
 	DefaultTimeStep = 0.1      //Evolution at Small Interval
 	EOSGamma        = 1.8      //Equation of State Exponent Feature
 	PCISamples      = 20
@@ -111,7 +113,7 @@ const (
 //Initializes Default Fluisd Structure During Initialization
 func DefaultDslFl() *DslFlConfig {
 	//Syncs at 24 Frames with a 60FPS runtime. 0.041 Seconds
-	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -3.5}, 2.0, 0.1, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{-0.009, 0, 0}}
+	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -3.5}, 1.0, 0.2, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{-0.009, 0, 0}}
 }
 
 func RenderFluidGL(config *DslFlConfig) error {
@@ -121,7 +123,7 @@ func RenderFluidGL(config *DslFlConfig) error {
 	var boxfluid = F.BoxFluidSystem{config.MdlOrg, config.MdlW, config.MdlW, config.MdlW, config.CU, config.CU, config.CU} //Box System Description
 	var sphfluid = F.SPHFluid{}                                                                                            //Main Fluid Component
 	sphfluid.Initialize(&boxfluid, &mfp, config.InitialVel)
-	var thisTimer = AnimationTimer{time.Now(), time.Now(), time.Now(), time.Now()}
+	var thisTimer = AnimationTimer{time.Now(), time.Now(), time.Now(), time.Now(), time.Now()}
 	var thisFluid = DSLFluidRenderer{&sphfluid, DefaultDslFl(), &thisTimer, make(map[string]int), make(map[string]V.Vec32), make(map[string]V.Mat4), make(map[string]float32), nil}
 
 	//Scale the Positions
@@ -147,11 +149,42 @@ func RenderFluidGL(config *DslFlConfig) error {
 //Main Fluid Run Loop -- Must Run inside same thread as Initiation Function
 func (this *DSLFluidRenderer) Run() {
 
-	var threadStatus chan int = make(chan int)
+	var fluidStatus chan int = make(chan int)
+	var samplerStatus chan int = make(chan int)
+	var densityStatus chan int = make(chan int)
+	spdinterval := float64(0.09) //Sync Every 2.0 Seconds
+	densityinterval := float64(0.01)
 
-	go this.SPH.Compute(threadStatus, this.Config.PrtlInterval)
+	go this.SPH.Compute(fluidStatus, this.Config.PrtlInterval)
+	go this.SPH.Sampler.Run(samplerStatus)
+	go this.SPH.ComputeDensities(densityStatus)
+
+	this.Anim.LastSamplerSync = time.Now()
+	this.Anim.LastDensitySync = time.Now()
+
+	//Animation / GL Main Entry
 	for !this.Context.GLFWindow.ShouldClose() {
 		this.Anim.CurrentTime = time.Now()
-		Draw(this.SPH, this.Context, this.Anim, this.Config.PrtlInterval, threadStatus)
-	}
-}
+		Draw(this.SPH, this.Context, this.Anim, this.Config.PrtlInterval, fluidStatus)
+
+		//Update the Spatial Sampler Thread
+		if time.Now().Sub(this.Anim.LastSamplerSync).Seconds() > spdinterval {
+			sampleSyncStatus := <-samplerStatus
+			if sampleSyncStatus == SPD_THREAD_SYNCED {
+				samplerStatus <- SPD_THREAD_RUN
+				this.Anim.LastSamplerSync = time.Now()
+			}
+
+		}
+
+		//Update the Density Thread
+		if time.Now().Sub(this.Anim.LastDensitySync).Seconds() > densityinterval {
+			densitySync := <-densityStatus
+			if densitySync == DENSITY_THREAD_WAIT {
+				densityStatus <- DENSITY_THREAD_RUN
+				this.Anim.LastDensitySync = time.Now()
+			}
+		}
+
+	} //End GL render loop
+} //End func

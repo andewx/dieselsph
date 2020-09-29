@@ -14,7 +14,9 @@ const (
 //Spatial Deviation Sampler maintains linear index buffer into spatial positions array
 //Implements SPHSampler interface. Sampler analysis routine should be called from high level api
 //stack to run concurrently with the system using the Sampler through its concurrent hook Run()
-//Look for future implementation of Spatial Clustering Sampler to improve and extend this model
+//This method is relatively quick and dirty although it runs a O(2N) process to update the particle list
+//Suggest utilizing thread timers to only occasionally update Samplers indexes
+//Updated method would be a stratified sampler strategy which has not yet been implemented.
 type SPDSampler struct {
 	Std       float32   //Standard Deviation Global
 	MDist     float32   //Mean Particle Distance from Origin
@@ -25,37 +27,39 @@ type SPDSampler struct {
 	P         int       //particles
 	Occup     []uint64  //Compresses particle index occupancy list
 	BigEndian bool      //Check the endianes
+	MOrigin   V.Vec32
 }
 
 //Initiates Sampler  (samples is number samples)
-func (s *SPDSampler) SPDSampler(samples int, particles []V.Vec32) {
+func (s SPDSampler) SPHSampler(samples int, particles []V.Vec32) *SPDSampler {
 	positions := len(particles)
 
 	s.P = positions
 	s.IdxPos = make([]int, positions)
 	s.Positions = particles //make sure this is only a reference
 	s.S = samples
-	meanIdx := 0
-	MeanDist := float32(0.0)
 	occupints := float64(positions) / 64.0
 	s.Occup = make([]uint64, int(math.Ceil(occupints)))
+	s.MIdx = positions / 2
 
+	//Determine Fluid Origin and Sampler Properts O(3N) - Once origins and std are
+	//set we will calculate and update together. Since the error will be reduced
 	for i := 0; i < positions; i++ {
-		s.IdxPos[i] = i
-		meanIdx++
-		MeanDist += V.Length(s.Positions[i])
+		s.MOrigin = V.Scale(V.Add(s.MOrigin, s.Positions[i]), float32(1/s.P))
 	}
 
-	s.MDist = MeanDist / float32(positions)
-	s.MIdx = meanIdx / 2
-
-	meanStd := float32(0.0)
+	//Compute Mean Distance from calculated origin
 	for i := 0; i < positions; i++ {
-		x := V.Length(s.Positions[i]) - s.MDist
-		meanStd += x * x
+		s.MDist += V.Length(V.Scale(V.Sub(s.Positions[i], s.MOrigin), float32(1/s.P)))
 	}
 
-	s.Std = float32(math.Sqrt(float64(meanStd / float32(s.P))))
+	//Compute Standard Deviation
+	for i := 0; i < positions; i++ {
+		x := V.Length(V.Sub(s.Positions[i], s.MOrigin)) - s.MDist
+		s.Std += x * x
+	}
+
+	s.Std = float32(math.Sqrt(float64(s.Std / float32(s.P))))
 
 	s.BigEndian = s.CheckEndian()
 	//Now set all the index positions based on spatial deviations
@@ -63,16 +67,35 @@ func (s *SPDSampler) SPDSampler(samples int, particles []V.Vec32) {
 	//From the mapping
 	s.MapIndexes()
 
+	return &s
+
+}
+
+func (s SPDSampler) Update() {
+	//Determine Fluid Origin and Sampler Properts O(3N) - Once origins and std are
+	//set we will calculate and update together. Since the error will be reduced
+	//We can use the previous origin for distances
+	vec := V.Vec32{}
+	for i := 0; i < s.P; i++ {
+		vec = V.Scale(V.Add(vec, s.Positions[i]), float32(1/s.P))
+		s.MDist += V.Length(V.Scale(V.Sub(s.Positions[i], s.MOrigin), float32(1/s.P)))
+		x := V.Length(V.Sub(s.Positions[i], s.MOrigin)) - s.MDist
+		s.Std += x * x
+	}
+
+	s.Std = float32(math.Sqrt(float64(s.Std / float32(s.P))))
+
+	s.MapIndexes()
 }
 
 //Gets samples but produces clustering behavior of indexes by swapping
 //indexes based on standard deviations of distances. Number of samples returned
 //is not guaranteed
-func (s *SPDSampler) GetSamples(v V.Vec32) []int {
+func (s SPDSampler) GetSamples(v V.Vec32) []int {
 
 	vIdx := s.MapDeviation(v)
 	minIdx, maxIdx := s.GetSamplerIndexBounds(vIdx)
-	count := maxIdx - minIdx
+	count := int(math.Abs(float64(maxIdx - minIdx)))
 	samples := make([]int, maxIdx-minIdx)
 
 	for i := 0; i < count; i++ {
@@ -83,24 +106,30 @@ func (s *SPDSampler) GetSamples(v V.Vec32) []int {
 }
 
 //Runs sampler interface run. Performs the core sampler maintence taskings
-func (s *SPDSampler) Run(status chan int) {
+func (s SPDSampler) Run(status chan int) {
 	done := false
-	threadSignal := <-status
+	synced := true
 	for !done {
-		if threadSignal == THREAD_RUN_SAMPLER {
-			s.MapIndexes()
-			status <- THREAD_WAIT_SAMPLER //Signal Thread Status waiting
-			if threadSignal == THREAD_STOP_SAMPLER {
-				done = true
+		if synced {
+			s.Update()
+			synced = false
+			status <- THREAD_WAIT_SAMPLER //Thread has been synced
+			nStatus := <-status           //Wait on the next status update
+			if nStatus == THREAD_RUN_SAMPLER {
+				synced = true
 			}
 		}
 	}
 }
 
 //Maps a standard deviation to an index
-func (s *SPDSampler) MapDeviation(v V.Vec32) int {
+func (s SPDSampler) MapDeviation(v V.Vec32) int {
 	vIdx := 0
 	x := (V.Length(v) - s.MDist)
+
+	if s.P == 0 {
+		fmt.Printf("Particles Stored = %d\n Error Attempt to Divide By Zero\n", s.P)
+	}
 	dev := float32(math.Sqrt(float64((x * x) / float32(s.P))))
 	oStep := (s.Std * 2) / float32(s.P)
 	ltMean := true
@@ -128,7 +157,7 @@ func (s *SPDSampler) MapDeviation(v V.Vec32) int {
 
 //Gets Sampler Index Bounds from a central index and sample count parameter
 //returns min index, max index of the bounds
-func (s *SPDSampler) GetSamplerIndexBounds(sampleIdx int) (int, int) {
+func (s SPDSampler) GetSamplerIndexBounds(sampleIdx int) (int, int) {
 	//Indexes should not wrap instead reposition the sampling index
 	minSampleIdx := sampleIdx - (s.S / 2)
 	maxSampleIdx := (sampleIdx + s.S/2)
@@ -136,13 +165,13 @@ func (s *SPDSampler) GetSamplerIndexBounds(sampleIdx int) (int, int) {
 	if minSampleIdx < 0 {
 		minOffset := int(math.Abs(float64(minSampleIdx)))
 		minSampleIdx = 0
-		maxSampleIdx += minOffset
+		maxSampleIdx = (maxSampleIdx + minOffset) % s.P
 	}
 
 	if maxSampleIdx >= s.P {
 		maxOffset := maxSampleIdx - s.P
 		maxSampleIdx = s.P - 1
-		minSampleIdx += maxOffset
+		minSampleIdx = (minSampleIdx + maxOffset) % s.P
 	}
 
 	//Final check right sample - this code should not execute
@@ -162,7 +191,7 @@ func (s *SPDSampler) GetSamplerIndexBounds(sampleIdx int) (int, int) {
 //bit array tracks the occupancy status of an index if the bit is flagged
 //then index is mapped to a location to right of. Index Bounds collisions cause
 //A seek then to the left of the mapped index location
-func (s *SPDSampler) MapIndexes() error {
+func (s SPDSampler) MapIndexes() error {
 
 	//Clear the bit arrays
 	s.ClearOccupancy()
@@ -214,14 +243,14 @@ func (s *SPDSampler) MapIndexes() error {
 	return nil
 } //End Function
 
-func (s *SPDSampler) ClearOccupancy() {
+func (s SPDSampler) ClearOccupancy() {
 	for i := 0; i < len(s.Occup); i++ {
 		s.Occup[i] = 0
 	}
 }
 
 //Flags
-func (s *SPDSampler) FlagIndexBit(idx int) {
+func (s SPDSampler) FlagIndexBit(idx int) {
 	//Create the masking uint at the required index
 	mask := uint64(1)
 	nmask := uint64(0)
@@ -240,7 +269,7 @@ func (s *SPDSampler) FlagIndexBit(idx int) {
 	return
 }
 
-func (s *SPDSampler) GetIndexBit(idx int) bool {
+func (s SPDSampler) GetIndexBit(idx int) bool {
 	//Create the masking uint at the required index
 	//Create the masking uint at the required index
 	mask := uint64(1)
@@ -261,7 +290,7 @@ func (s *SPDSampler) GetIndexBit(idx int) bool {
 }
 
 //Checks the byte order specifications of the system returns true if big endian
-func (s *SPDSampler) CheckEndian() bool {
+func (s SPDSampler) CheckEndian() bool {
 	var i int = 0x0100
 	ptr := unsafe.Pointer(&i)
 	if 0x01 == *(*byte)(ptr) {

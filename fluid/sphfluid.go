@@ -18,10 +18,12 @@ import (
 const MAX_PCI = 3 //Cubic Predictive Branch
 const GRAV = -9.810435
 const EOS_EXP = 1 //EOS Stiffness Parameter
+const DENSITY_THREAD_RUN = 100
+const DENSITY_THREAD_WAIT = 101
 
 //SPHFluid - Is a PCISPH Fluid with Predictive Correction of Pressures
 type SPHFluid struct {
-	SPHGrid    *SpatialHashGrid   //Spatial Hash Grid For Neighbor Particles
+	Sampler    *SPDSampler        //Sampler Interface
 	Colliders  *G.Mesh            //Collider Triangle Meshes
 	Mfp        *MassFluidParticle //Fluid Particle Descriptor
 	ItrpKernel GaussianKernel     //Gaussian Kernel Typically
@@ -77,6 +79,8 @@ type BoxFluidSystem struct {
 //Particle Densities
 func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle, initialVelocity V.Vec32) {
 
+	sampler := SPDSampler{}
+
 	//Initialize Particles
 	fluid.Count = init.WidthCells * init.HeightCells * init.DepthCells
 	fluid.Mfp = mpf
@@ -95,11 +99,6 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle, 
 	fluid.Pressures = make([]float32, fluid.Count)
 	fluid.Densities = make([]float32, fluid.Count)
 	fluid.Forces = make([]V.Vec32, fluid.Count)
-
-	//Spatial Acceleration Grid -- We're having an issue with the spatial hashing modulus due to rounding modulus error
-	fluid.SPHGrid = AllocateGridUserDefined(init.Width, 7) //Constructs a cubic grid the 7 constant needs to be change
-
-	//Initialize Particle Positions and Stuff
 
 	for i := 0; i < init.WidthCells; i++ {
 		for j := 0; j < init.HeightCells; j++ {
@@ -123,11 +122,9 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle, 
 	} //End Particle Init
 
 	fluid.Colliders = G.Box(init.Width, init.Height, init.Depth, init.Origin) //Initialize Collider Box
-
-	//Allocates Particles to Spatial Hash Grid
-	fluid.SPHGrid.Load(fluid.Positions)
-	//Create Collider Mesh Box From List of triangles (12)
-	fluid.UpdateDensities()
+	//Initiate Sampler from particle data
+	fluid.Sampler = sampler.SPHSampler(40, fluid.Positions)
+	fluid.UpdateDensities() //Baseline density calculation
 	//Time step dependent on propogation of particle collisions
 	fluid.Timer.TS = 0.4 * math.Sqrt(float64((fluid.Mfp.Mass*fluid.Mfp.OuterRadius)/fluid.Mfp.SpeedSound))
 }
@@ -139,12 +136,12 @@ func (fluid *SPHFluid) UpdateDensities() {
 	for i := 0; i < int(FIELD); i++ {
 		//For Each Particle Calculate Kernel Based Summation
 
-		samples, nCollide, _ := fluid.SPHGrid.GetSamples(&fluid.Positions[i])
+		samples := fluid.Sampler.GetSamples(fluid.Positions[i])
 
 		mass := fluid.Mfp.Mass
 		density := float32(0.0)
-		for j := 0; j < nCollide; j++ {
-			dist := V.Length(V.Sub(fluid.Positions[i], fluid.Positions[samples[j].Index]))
+		for j := 0; j < len(samples); j++ {
+			dist := V.Length(V.Sub(fluid.Positions[i], fluid.Positions[samples[j]]))
 			density += mass * float32(fluid.GradKernel.F(dist))
 		}
 		if !math.IsNaN(float64(density)) {
@@ -159,15 +156,15 @@ func (fluid *SPHFluid) DensityGradient(i int) V.Vec32 {
 
 	//For Each Particle Calculate Kernel Based Summation
 	DensityGrad := V.Vec32{}
-	samples, nCount, _ := fluid.SPHGrid.GetSamples(&fluid.Positions[i])
+	samples := fluid.Sampler.GetSamples(fluid.Positions[i])
 	mass := fluid.Mfp.Mass
 	iDensity := fluid.Densities[i]
 
-	for j := 0; j < nCount; j++ {
-		jIndex := samples[j].Index
+	for j := 0; j < len(samples); j++ {
+		jIndex := samples[j]
 		if jIndex != i {
-			jDensity := fluid.Densities[samples[j].Index]
-			dir := V.Sub(fluid.Positions[samples[j].Index], fluid.Positions[i])
+			jDensity := fluid.Densities[samples[j]]
+			dir := V.Sub(fluid.Positions[samples[j]], fluid.Positions[i])
 			dist := V.Length(dir)
 			dir = V.Scale(dir, 1/dist)
 			grad := fluid.GradKernel.Grad(dist, &dir)
@@ -185,21 +182,21 @@ func (fluid *SPHFluid) Pressure(i int) {
 
 	//For Each Particle Calculate Kernel Based Summation
 
-	samples, nCount, _ := fluid.SPHGrid.GetSamples(&fluid.Positions[i])
+	samples := fluid.Sampler.GetSamples(fluid.Positions[i])
 	mass := fluid.Mfp.Mass
 	dens := fluid.Densities[i]
 	msq := mass * mass
 	F := float32(0.0)
 
-	for j := 0; j < nCount; j++ {
-		jIndex := samples[j].Index
+	for j := 0; j < len(samples); j++ {
+		jIndex := samples[j]
 		if jIndex != i {
-			jDensity := fluid.Densities[samples[j].Index]
-			dir := V.Sub(fluid.Positions[samples[j].Index], fluid.Positions[i])
+			jDensity := fluid.Densities[samples[j]]
+			dir := V.Sub(fluid.Positions[samples[j]], fluid.Positions[i])
 			dist := V.Length(dir)
 			dir = V.Scale(dir, 1/dist) //Normalize
 			grad := fluid.GradKernel.Grad(dist, &dir)
-			F = (msq * ((fluid.Pressures[i] / dens * dens) + (fluid.Pressures[samples[j].Index] / jDensity * jDensity)))
+			F = (msq * ((fluid.Pressures[i] / dens * dens) + (fluid.Pressures[samples[j]] / jDensity * jDensity)))
 			fluid.Forces[i].Add(V.Scale(grad, -F))
 		}
 
@@ -213,21 +210,21 @@ func (fluid *SPHFluid) Viscosity(i int) {
 
 	//For Each Particle Calculate Kernel Based Summation
 
-	samples, nCount, _ := fluid.SPHGrid.GetSamples(&fluid.Positions[i])
+	samples := fluid.Sampler.GetSamples(fluid.Positions[i])
 	mass := fluid.Mfp.Mass
 
 	vi := fluid.Velocities[i]
 
-	for j := 0; j < nCount; j++ {
-		jIndex := samples[j].Index
+	for j := 0; j < len(samples); j++ {
+		jIndex := samples[j]
 		if jIndex != i {
-			vj := fluid.Velocities[samples[j].Index]
-			jDensity := fluid.Densities[samples[j].Index]
+			vj := fluid.Velocities[samples[j]]
+			jDensity := fluid.Densities[samples[j]]
 
 			//Check the Density
 			if !math.IsNaN(float64(jDensity)) || jDensity != 0 {
 				coeff_vec := V.Scale(V.Sub(vj, vi), 0.00091/jDensity)
-				dist := fluid.Positions[i].Distance(fluid.Positions[samples[j].Index])
+				dist := fluid.Positions[i].Distance(fluid.Positions[samples[j]])
 				lap := fluid.GradKernel.O2D(dist)
 				force := V.Scale(coeff_vec, mass*mass*lap)
 				fluid.Forces[i].Add(force)
@@ -331,10 +328,9 @@ func (fluid *SPHFluid) Compute(threadStatus chan int, secondsAdvance float64) {
 
 	for !done {
 
-		fluid.UpdateDensities()
 		for i := 0; i < FLUID; i++ {
 
-			fluid.PressureEOS(i, 0.1) //Negative Pressure Scale 0
+			fluid.PressureEOS(i, 0.0) //Negative Pressure Scale 0
 			fluid.Pressure(i)
 			fluid.Viscosity(i)
 			fluid.External(i, EXTERNAL)
@@ -343,10 +339,11 @@ func (fluid *SPHFluid) Compute(threadStatus chan int, secondsAdvance float64) {
 			//Update Particles and resolve forces
 			fluid.Update(i)
 
+			//Has Time Advanced Sufficiently
+			//If so send channel message so parent thread can update buffers
+
 		}
 		fluid.Timer.StepTime()
-		//Has Time Advanced Sufficiently
-		//If so send channel message so parent thread can update buffers
 
 		threadStatus <- 20 //FLUID_THREAD_SYNCED SEND SIGNAL TO UPDATE
 		fluid.Timer.T = 0.0
@@ -357,5 +354,18 @@ func (fluid *SPHFluid) Compute(threadStatus chan int, secondsAdvance float64) {
 			//Otherwise we were continuously blocking
 		}
 
+	}
+}
+
+//Asyncrohnously updates the densities
+func (fluid *SPHFluid) ComputeDensities(densityStatus chan int) {
+	done := false
+	for !done {
+		fluid.UpdateDensities()
+		densityStatus <- DENSITY_THREAD_WAIT
+		runStatus := <-densityStatus
+		if runStatus != DENSITY_THREAD_RUN {
+			done = true
+		}
 	}
 }
