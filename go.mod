@@ -1,6 +1,6 @@
 module diesel.com/diesel
 
-go 1.12
+go 1.15
 
 require (
 	4d63.com/gochecknoglobals v0.0.0-20190306162314-7c3491d2b6ec // indirect
