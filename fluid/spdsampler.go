@@ -24,7 +24,7 @@ type SPDSampler struct {
 	S         int       //number samples
 	P         int       //particles
 	Occup     []uint64  //Compresses particle index occupancy list
-	BigEndian bool      //Check the endianess
+	BigEndian bool      //Check the endianes
 }
 
 //Initiates Sampler  (samples is number samples)
