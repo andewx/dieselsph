@@ -10,6 +10,7 @@ import (
 	"github.com/go-gl/glfw/v3.2/glfw"
 	"io/ioutil"
 	"log"
+	"math"
 	"strings"
 	"time"
 )
@@ -28,32 +29,49 @@ type Camera struct {
 }
 
 type DieselContext struct {
-	Cam            *Camera
-	PrgID          [2]uint32
-	VAO            [2]uint32
-	VBO            [2]uint32
-	Model          *V.Mat4
-	View           *V.Mat4
-	Proj           *V.Mat4
-	ModelShaderLoc [2]int32
-	ViewShaderLoc  [2]int32
-	ProjShaderLoc  [2]int32
-	ModeLoc        int32
-	Frames         int32
-	GLFWindow      *glfw.Window
-	VertexSRC      string
-	FragSRC        string
+	Cam             *Camera
+	PrgID           [2]uint32
+	VAO             [2]uint32
+	VBO             [2]uint32
+	Model           *V.Mat4
+	View            *V.Mat4
+	Proj            *V.Mat4
+	ModelShaderLoc  [2]int32
+	ViewShaderLoc   [2]int32
+	ProjShaderLoc   [2]int32
+	RotShaderLoc    [2]int32
+	RotOriginLoc    [2]int32
+	ModeLoc         int32
+	Frames          int32
+	GLFWindow       *glfw.Window
+	VertexSRC       string
+	FragSRC         string
+	RotX            *V.Mat3
+	RotY            *V.Mat3
+	RotOriginTrans  *V.Mat4 //Positive Translation
+	RotOriginTrans0 *V.Mat4 //Negative Translation
+	RotOrigin       *V.Vec32
 }
 
 //Global Pointers :)))))))))))))) - Debugger Apparently Can't Handle This
 var GlobalTrans *V.Vec32
+var RotateTime time.Time
+var RotateTimeLast time.Time
+var state_hold_mouse bool
 var GlobalCamera *Camera
+var xT float64
+var yT float64
+var RotAngleX float32
+var RotAngleY float32
 
 // initGlfw initializes glfw and returns a Window to use.
 func InitGLFW(a *AppWindow) *glfw.Window {
 	if err := glfw.Init(); err != nil {
 		panic(err)
 	}
+
+	state_hold_mouse = false
+	RotateTime = time.Now()
 
 	glfw.WindowHint(glfw.Resizable, glfw.False)
 	glfw.WindowHint(glfw.ContextVersionMajor, 4) // OR 2
@@ -65,6 +83,8 @@ func InitGLFW(a *AppWindow) *glfw.Window {
 	checkError(err)
 	window.MakeContextCurrent()
 	window.SetKeyCallback(ProcessInput)
+	window.SetMouseButtonCallback(ProcessMouse)
+	window.SetCursorPosCallback(ProcessCursor)
 
 	return window
 }
@@ -94,8 +114,8 @@ func InitOpenGL(sph *F.SPHFluid) (*DieselContext, error) {
 		return nil, err
 	}
 
-	dslContext.VertexSRC = string(sourceVTX)
-	dslContext.FragSRC = string(sourceFRG)
+	dslContext.VertexSRC = string(sourceVTX) + "\x00"
+	dslContext.FragSRC = string(sourceFRG) + "\x00"
 
 	//Handled by local function compile Shader
 	vtxSHO, err := compileShader(dslContext.VertexSRC, gl.VERTEX_SHADER)
@@ -129,17 +149,30 @@ func InitOpenGL(sph *F.SPHFluid) (*DieselContext, error) {
 	model := V.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1} //identity
 	view := V.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}
 	proj := V.ProjectionMatrix(l, r, t, b, n, f)
+	rotX := V.Mat3{1, 0, 0, 0, 1, 0, 0, 0, 1}
+	rotY := V.Mat3{1, 0, 0, 0, 1, 0, 0, 0, 1}
+	rot0 := V.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}
+	rot1 := V.Mat4{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}
+	rotOrigin := V.Vec32{0, 0, 0}
 
 	dslContext.Cam = GlobalCamera
 	dslContext.Model = &model
 	dslContext.View = &view
 	dslContext.Proj = &proj
 	dslContext.PrgID[0] = prog1
+	dslContext.RotX = &rotX
+	dslContext.RotY = &rotY
+	dslContext.RotOriginTrans = &rot0
+	dslContext.RotOriginTrans0 = &rot1
+	dslContext.RotOrigin = &rotOrigin
 	//have to fucking wrangle a utf-8 out of a string again
 	dslContext.ModelShaderLoc[0] = gl.GetUniformLocation(prog1, gl.Str("model\x00"))
 	dslContext.ViewShaderLoc[0] = gl.GetUniformLocation(prog1, gl.Str("view\x00"))
 	dslContext.ProjShaderLoc[0] = gl.GetUniformLocation(prog1, gl.Str("projection\x00"))
-	dslContext.ProjShaderLoc[0] = gl.GetUniformLocation(prog1, gl.Str("projection\x00"))
+	dslContext.RotShaderLoc[0] = gl.GetUniformLocation(prog1, gl.Str("rotX\x00"))
+	dslContext.RotShaderLoc[1] = gl.GetUniformLocation(prog1, gl.Str("rotY\x00"))
+	dslContext.RotOriginLoc[0] = gl.GetUniformLocation(prog1, gl.Str("rotOriginTrans0\x00")) //Positive Trans
+	dslContext.RotOriginLoc[1] = gl.GetUniformLocation(prog1, gl.Str("rotOriginTrans1\x00")) //Negative Translation
 	dslContext.ModeLoc = gl.GetUniformLocation(prog1, gl.Str("mode\x00"))
 	//View/World matrix
 
@@ -154,6 +187,24 @@ func InitOpenGL(sph *F.SPHFluid) (*DieselContext, error) {
 	return &dslContext, nil
 }
 
+func SetRotMatrix(dsl *DieselContext) {
+	cosAX := float32(math.Cos(float64(RotAngleX)))
+	sinAX := float32(math.Sin(float64(RotAngleX)))
+	cosAY := float32(math.Cos(float64(RotAngleY)))
+	sinAY := float32(math.Sin(float64(RotAngleY)))
+
+	dsl.RotX[4] = cosAX
+	dsl.RotX[5] = sinAX
+	dsl.RotX[7] = -sinAX
+	dsl.RotX[8] = cosAX
+
+	dsl.RotY[0] = cosAY
+	dsl.RotY[2] = -sinAY
+	dsl.RotY[6] = sinAY
+	dsl.RotY[8] = cosAY
+
+}
+
 func Draw(sph *F.SPHFluid, dsl *DieselContext, anim *AnimationTimer, interval float64, c chan int) {
 
 	//Timer Function in Seconds
@@ -166,6 +217,14 @@ func Draw(sph *F.SPHFluid, dsl *DieselContext, anim *AnimationTimer, interval fl
 
 	//Set uniforms
 	dsl.View.Translation(GlobalTrans) //Should accumulate Translationinto the View Matrix
+	dsl.RotOriginTrans[12] = dsl.RotOrigin[0]
+	dsl.RotOriginTrans[13] = dsl.RotOrigin[1]
+	dsl.RotOriginTrans[14] = dsl.RotOrigin[2]
+	dsl.RotOriginTrans0[12] = -dsl.RotOrigin[0]
+	dsl.RotOriginTrans0[13] = -dsl.RotOrigin[1]
+	dsl.RotOriginTrans0[14] = -dsl.RotOrigin[2]
+
+	SetRotMatrix(dsl)
 	GlobalTrans[0] *= 0
 	GlobalTrans[1] *= 0
 	GlobalTrans[2] *= 0
@@ -191,6 +250,11 @@ func Draw(sph *F.SPHFluid, dsl *DieselContext, anim *AnimationTimer, interval fl
 	gl.UniformMatrix4fv(dsl.ModelShaderLoc[0], 1, false, &dsl.Model[0])
 	gl.UniformMatrix4fv(dsl.ViewShaderLoc[0], 1, false, &dsl.View[0])
 	gl.UniformMatrix4fv(dsl.ProjShaderLoc[0], 1, false, &dsl.Proj[0])
+	gl.UniformMatrix3fv(dsl.RotShaderLoc[0], 1, false, &dsl.RotX[0])
+	gl.UniformMatrix3fv(dsl.RotShaderLoc[1], 1, false, &dsl.RotY[0])
+	gl.UniformMatrix4fv(dsl.RotOriginLoc[0], 1, false, &dsl.RotOriginTrans[0])
+	gl.UniformMatrix4fv(dsl.RotOriginLoc[1], 1, false, &dsl.RotOriginTrans0[0])
+
 	gl.Uniform1i(dsl.ModeLoc, 0) // Draw opaque particles
 
 	gl.PointSize(5.0)
@@ -202,7 +266,7 @@ func Draw(sph *F.SPHFluid, dsl *DieselContext, anim *AnimationTimer, interval fl
 	gl.Uniform1i(dsl.ModeLoc, 1) //Transparent Lit Surface
 	gl.BindVertexArray(dsl.VAO[1])
 
-	gl.DrawArrays(gl.TRIANGLES, 0, int32(len(sph.Colliders.Vertexes)))
+	gl.DrawArrays(gl.LINES, 0, int32(len(sph.Colliders.Vertexes)))
 	glfw.PollEvents()
 	dsl.GLFWindow.SwapBuffers()
 
@@ -255,10 +319,9 @@ func compileShader(source string, shaderType uint32) (uint32, error) {
 
 		log := strings.Repeat("\x00", int(logLength+1))
 		gl.GetShaderInfoLog(shader, logLength, nil, gl.Str(log))
-		free()
 		return 0, fmt.Errorf("GLSL Shader failed to compile\n: %v", log)
 	}
-
+	free()
 	return shader, nil
 }
 
@@ -284,5 +347,41 @@ func ProcessInput(w *glfw.Window, key glfw.Key, scancode int, action glfw.Action
 		//Accumulates the translation Vector
 		p := V.Vec32{1.0, 0.0, 0.0}
 		GlobalTrans.Add(*p.Scale(cameraSpeed))
+	}
+}
+
+//Set Mouse Callba j
+func ProcessMouse(w *glfw.Window, button glfw.MouseButton, action glfw.Action, mods glfw.ModifierKey) {
+	if button == glfw.MouseButtonLeft && action == glfw.Press {
+		//Save the raw xy postion intial and continuously update and poll
+		if !state_hold_mouse {
+			state_hold_mouse = true
+			RotateTime = time.Now()
+			RotateTimeLast = time.Now()
+
+		} else {
+			RotateTimeLast = time.Now()
+		}
+
+	}
+	if button == glfw.MouseButtonLeft && action == glfw.Release {
+		state_hold_mouse = false
+		xT = 0
+		yT = 0
+	}
+}
+
+func ProcessCursor(w *glfw.Window, xPos float64, yPos float64) {
+
+	if state_hold_mouse {
+		dt := RotateTimeLast.Sub(time.Now()).Seconds()
+		if !(xT == 0) && !(yT == 0) {
+			xdt := (xT - xPos) / dt
+			ydt := (yT - yPos) / dt
+			RotAngleX += float32(ydt / 100)
+			RotAngleY += float32(xdt / 100)
+		}
+		xT = xPos
+		yT = yPos
 	}
 }

@@ -100,26 +100,27 @@ const (
 	PSync           = 0.04166  //seconds (24fps update
 	H20Mass         = 0.001    //kg/cm3
 	H20Visc         = 0.000091 //kg*(m/s)
-	H20Kern         = 1.3      //Smoothing Kernel
+	H20Kern         = 0.459    //Smoothing Kernel
 	H20LiqDensity   = 0.001    //kg/cm^3
 	SOS             = 1400.0   //m/s (maximal information transfer) 1480 m/s with sounds
-	Particles       = 20       //15,625 Particles -- 1.9MB Positional Data Ram
+	Particles       = 15       //15,625 Particles -- 1.9MB Positional Data Ram
 	DefaultTimeStep = 0.1      //Evolution at Small Interval
-	EOSGamma        = 1.8      //Equation of State Exponent Feature
+	EOSGamma        = 1.9      //Equation of State Exponent Feature
 	PCISamples      = 20
-	SPHSamples      = 10
+	SPHSamples      = 20
+	ParticleRadius  = 0.01
 )
 
 //Initializes Default Fluisd Structure During Initialization
 func DefaultDslFl() *DslFlConfig {
 	//Syncs at 24 Frames with a 60FPS runtime. 0.041 Seconds
-	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -3.5}, 1.0, 0.2, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{-0.019, 0, 0}}
+	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -3.5}, 1.0, 0.1, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{0, 0, 0}}
 }
 
 func RenderFluidGL(config *DslFlConfig) error {
 
 	//Fluid Setup
-	var mfp = F.MassFluidParticle{config.PrtlMass, config.Viscos, config.KrnlRadius, config.KrnlRadius, DefaultTimeStep, config.SOS, config.EOSDens, EOSGamma}
+	var mfp = F.MassFluidParticle{config.PrtlMass, config.Viscos, config.KrnlRadius, ParticleRadius, DefaultTimeStep, config.SOS, config.EOSDens, EOSGamma}
 	var boxfluid = F.BoxFluidSystem{config.MdlOrg, config.MdlW, config.MdlW, config.MdlW, config.CU, config.CU, config.CU} //Box System Description
 	var sphfluid = F.SPHFluid{}                                                                                            //Main Fluid Component
 	sphfluid.Initialize(&boxfluid, &mfp, config.InitialVel)
@@ -139,6 +140,8 @@ func RenderFluidGL(config *DslFlConfig) error {
 	if checkError(err) {
 		return err
 	}
+
+	dieselContext.RotOrigin = &config.MdlOrg
 	dieselContext.GLFWindow = window
 	thisFluid.Context = dieselContext
 	window.SetKeyCallback(ProcessInput)

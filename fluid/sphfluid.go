@@ -3,6 +3,7 @@ package fluid
 import (
 	G "diesel.com/diesel/geometry"
 	V "diesel.com/diesel/vector"
+	"fmt"
 	"math"
 )
 
@@ -38,17 +39,17 @@ type SPHFluid struct {
 }
 
 //MassFluidParticle - Fluid system particle properties extended to system
-//mass is in kg / viscosity scalar coefficient / innerRadius is the innerParticle
-//boundary, outerRadius is utilized for surface reconstruction
+//mass is in kg / viscosity scalar coefficient / KernelRadius is the innerParticle
+//boundary, ParticleRadius is utilized for surface reconstruction
 type MassFluidParticle struct {
-	Mass          float32
-	Viscosity     float32
-	InnerRadius   float32
-	OuterRadius   float32
-	TimeStep      float32
-	SpeedSound    float32
-	TargetDensity float32
-	EosExp        float32
+	Mass           float32
+	Viscosity      float32
+	KernelRadius   float32
+	ParticleRadius float32
+	TimeStep       float32
+	SpeedSound     float32
+	TargetDensity  float32
+	EosExp         float32
 }
 
 type Timer struct {
@@ -84,8 +85,8 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle, 
 	//Initialize Particles
 	fluid.Count = init.WidthCells * init.HeightCells * init.DepthCells
 	fluid.Mfp = mpf
-	fluid.ItrpKernel = InitGaussian(mpf.InnerRadius)
-	fluid.GradKernel = InitCubic(fluid.Mfp.InnerRadius)
+	fluid.ItrpKernel = InitGaussian(mpf.KernelRadius)
+	fluid.GradKernel = InitCubic(fluid.Mfp.KernelRadius)
 	wStep := init.Width / float32(init.WidthCells)
 	hStep := init.Height / float32(init.HeightCells)
 	dStep := init.Depth / float32(init.DepthCells)
@@ -123,10 +124,10 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle, 
 
 	fluid.Colliders = G.Box(init.Width, init.Height, init.Depth, init.Origin) //Initialize Collider Box
 	//Initiate Sampler from particle data
-	fluid.Sampler = sampler.SPHSampler(20, fluid.Positions)
+	fluid.Sampler = sampler.SPHSampler(25, fluid.Positions)
 	fluid.UpdateDensities() //Baseline density calculation
 	//Time step dependent on propogation of particle collisions
-	fluid.Timer.TS = 0.4 * math.Sqrt(float64((fluid.Mfp.Mass*fluid.Mfp.OuterRadius)/fluid.Mfp.SpeedSound))
+	fluid.Timer.TS = float64((0.4 * fluid.Mfp.KernelRadius) / fluid.Mfp.SpeedSound)
 }
 
 //Updates Densities associated with each particle position with Gaussian Kernel
@@ -246,14 +247,12 @@ func (fluid *SPHFluid) External(i int, f V.Vec32) {
 //factor to the negative pressure. typically < 1.0
 func (fluid *SPHFluid) PressureEOS(i int, negativePressure float32) {
 	//sos := fluid.Mfp.SpeedSound
-	exp := fluid.Mfp.EosExp
+	eosExponent := fluid.Mfp.EosExp
 	tgt := fluid.Mfp.Mass
-	k := (fluid.Mfp.Mass * fluid.Mfp.SpeedSound) / (fluid.Mfp.EosExp * 150)
+	eosScale := (fluid.Mfp.Mass) / (eosExponent * 50)
 	density := fluid.Densities[i]
-	if density > 0.00001 {
-		//Don't Allow Negative Density
-		g := k * ((density / tgt) - 1.0)
-		p := float32(math.Pow(float64(g), float64(exp)))
+	if density > 0 {
+		p := (eosScale) * float32(math.Pow(float64((density/tgt)-1.0), float64(eosExponent)))
 		if p < 0 {
 			p *= negativePressure //Negative Pressure Scaling
 		}
@@ -266,19 +265,17 @@ func (fluid *SPHFluid) PressureEOS(i int, negativePressure float32) {
 //Test Particles Against Possible Mesh Collisions given a position and velocity
 func (fluid *SPHFluid) Collide(index int) {
 	//Resolve Particle Collisions
-
 	normal, _, collis := fluid.Colliders.Collision(fluid.Positions[index], fluid.Velocities[index], float32(fluid.Timer.TS))
 	vel := fluid.Velocities[index]
 	if collis == true {
-		k_stiff := float32(0.32) //Restitution Coefficient. Further research req'd
-		friction := float32(0.025)
-		//fluid.Positions[index] = p0
-		//	fmomentum := V.Scale(fluid.Velocities[index], fluid.Mfp.Mass*float32(fluid.Timer.TS))
+		k_stiff := float32(0.45) //Restitution Coefficient. Further research req'd
+		friction := float32(0.96)
 		velN := V.Scale(normal, V.Dot(normal, vel))
 		velTan := V.Sub(vel, velN)
 		dtVN := V.Scale(velN, (-k_stiff - 1.0))
 		velN = V.Scale(velN, -k_stiff)
 
+		//Compute friction coefficients
 		if V.Length(velTan) > 0.0 {
 			fcomp := float64(1.0 - friction*V.Length(dtVN)/V.Length(velTan))
 			frictionScale := float32(math.Max(fcomp, 0.0))
@@ -286,17 +283,14 @@ func (fluid *SPHFluid) Collide(index int) {
 		}
 
 		nVelocity := V.Add(velN, velTan)
-		fluid.Velocities[index] = nVelocity
 
 		//Oppose force
-		fluid.Forces[index].Scale(-1.0)
+		//	forceNormal := V.Scale(normal, V.Dot(normal, fluid.Forces[index]))
+		//	fluid.Forces[index] = forceNormal
 
-		//Create a resting mass when velocities are near 0
-		velMag := V.Length(fluid.Velocities[index])
-		if velMag < 0.00001 {
-			fluid.Velocities[index].Scale(0.0)
-		}
+		fluid.Velocities[index] = nVelocity
 	}
+
 }
 
 //Integrates the current particle forces and updates the velocity vector.
@@ -310,14 +304,14 @@ func (fluid *SPHFluid) Update(index int) error {
 
 	//Clear Particle Force State
 	fluid.Forces[index] = V.Vec32{0.0, 0.0, 0.0}
-	fluid.Densities[index] = fluid.Mfp.Mass
+	//fluid.Densities[index] = fluid.Mfp.Mass
 
 	return nil
 }
 
 //Main SPH fluid loop. Integrates all forces. Computes pressure from EOS and Resolves
 //Collisions. Updates particle velocity and position then clears all forces
-func (fluid *SPHFluid) Compute(threadStatus chan int, secondsAdvance float64) {
+func (fluid *SPHFluid) Compute(threadStatus chan int, secondsAdvance float64) error {
 
 	FLUID := fluid.Count
 	GRAVITY := V.Vec32{0, fluid.Mfp.Mass * GRAV, 0}
@@ -349,12 +343,14 @@ func (fluid *SPHFluid) Compute(threadStatus chan int, secondsAdvance float64) {
 		fluid.Timer.T = 0.0
 		fluid.Timer.TIMELAST = 0.0
 		status := <-threadStatus //Block and Wait for Signal
-		if status == 20 {
-			//Note that we had to finish processing the entire block in the thread
-			//Otherwise we were continuously blocking
+		if status == 20 {        //FLUID THREAD RUN
+			if math.IsNaN(float64(fluid.Positions[0][0])) {
+				return fmt.Errorf("Fluid position diverged\nExiting")
+			}
 		}
 
 	}
+	return nil
 }
 
 //Asyncrohnously updates the densities
