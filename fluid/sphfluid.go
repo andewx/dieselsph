@@ -284,9 +284,9 @@ func (fluid *SPHFluid) Collide(index int) {
 
 		nVelocity := V.Add(velN, velTan)
 
-		//Oppose force
-		//	forceNormal := V.Scale(normal, V.Dot(normal, fluid.Forces[index]))
-		//	fluid.Forces[index] = forceNormal
+		//Oppose particle Momentum Vector - THIS WORKED
+		forceNormal := V.Scale(normal, V.Dot(normal, V.Scale(fluid.Velocities[index], fluid.Mfp.Mass)))
+		fluid.Forces[index] = forceNormal
 
 		fluid.Velocities[index] = nVelocity
 	}
@@ -324,17 +324,12 @@ func (fluid *SPHFluid) Compute(threadStatus chan int, secondsAdvance float64) er
 
 		for i := 0; i < FLUID; i++ {
 
-			fluid.PressureEOS(i, 0.0) //Negative Pressure Scale 0
+			fluid.PressureEOS(i, 0.5) //Negative Pressure Scale 0
 			fluid.Pressure(i)
 			fluid.Viscosity(i)
 			fluid.External(i, EXTERNAL)
-			//Resolve Mesh Collisions
 			fluid.Collide(i)
-			//Update Particles and resolve forces
 			fluid.Update(i)
-
-			//Has Time Advanced Sufficiently
-			//If so send channel message so parent thread can update buffers
 
 		}
 		fluid.Timer.StepTime()
