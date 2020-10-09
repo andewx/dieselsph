@@ -246,13 +246,14 @@ func (fluid *SPHFluid) External(i int, f V.Vec32) {
 //set to 0. If there is a valid use for negative pressures (i.e. < target density) then add a Scaling
 //factor to the negative pressure. typically < 1.0
 func (fluid *SPHFluid) PressureEOS(i int, negativePressure float32) {
-	//sos := fluid.Mfp.SpeedSound
+	//reference density : volumetric distribution of particle mass through
+	r0 := (fluid.Mfp.KernelRadius * fluid.Mfp.KernelRadius * fluid.Mfp.KernelRadius) * PI * (4 / 3)
+	r0 = r0 / fluid.Mfp.Mass
 	eosExponent := fluid.Mfp.EosExp
-	tgt := fluid.Mfp.Mass
-	eosScale := (fluid.Mfp.Mass) / (eosExponent * 50)
+	eosScale := (r0 * fluid.Mfp.SpeedSound * fluid.Mfp.SpeedSound) / eosExponent
 	density := fluid.Densities[i]
 	if density > 0 {
-		p := (eosScale) * float32(math.Pow(float64((density/tgt)-1.0), float64(eosExponent)))
+		p := eosScale*(float32(math.Pow(float64(density/r0), float64(eosExponent))-1.0)) + 1
 		if p < 0 {
 			p *= negativePressure //Negative Pressure Scaling
 		}
@@ -269,7 +270,7 @@ func (fluid *SPHFluid) Collide(index int) {
 	vel := fluid.Velocities[index]
 	if collis == true {
 		k_stiff := float32(0.45) //Restitution Coefficient. Further research req'd
-		friction := float32(0.96)
+		friction := float32(0.001)
 		velN := V.Scale(normal, V.Dot(normal, vel))
 		velTan := V.Sub(vel, velN)
 		dtVN := V.Scale(velN, (-k_stiff - 1.0))
@@ -324,7 +325,7 @@ func (fluid *SPHFluid) Compute(threadStatus chan int, secondsAdvance float64) er
 
 		for i := 0; i < FLUID; i++ {
 
-			fluid.PressureEOS(i, 0.5) //Negative Pressure Scale 0
+			fluid.PressureEOS(i, 0.00000001) //Negative Pressure Scale 0
 			fluid.Pressure(i)
 			fluid.Viscosity(i)
 			fluid.External(i, EXTERNAL)
