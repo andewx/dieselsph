@@ -31,6 +31,13 @@ func TransferPositionData(graphicsPtr unsafe.Pointer, posArray []V.Vec32, count 
 	return nil
 }
 
+func Abs(a float32) float32 {
+	if a < 0.0 {
+		return a * -1.0
+	}
+	return a
+}
+
 //Scales Position List Points Around an Origin
 func ScalePositions(pos []V.Vec32, origin V.Vec32, scale float32) {
 

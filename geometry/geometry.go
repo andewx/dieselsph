@@ -3,6 +3,7 @@ package geometry
 import (
 	Vec "diesel.com/diesel/vector"
 	//Mgl "github.com/go-gl/mathgl/mgl32"
+	"fmt"
 )
 
 const (
@@ -46,14 +47,22 @@ func InitTriangle(a Vec.Vec32, b Vec.Vec32, c Vec.Vec32) Triangle {
 	return V
 }
 
-func InitMesh(vertices []Vec.Vec32) Mesh {
+func InitMesh(vertices []Vec.Vec32, origin Vec.Vec32) Mesh {
 	nMesh := Mesh{}
 	nMesh.Vertexes = vertices
 	nMesh.Normals = make([]Vec.Vec32, len(vertices)/3)
 	index := 0
-	for i := 0; i < len(vertices)-3; i += 3 {
+	//Makes the normals from triangle vertices - We would like all normals to be inward
+	//Default Point towards zero vec
+	for i := 0; i < len(vertices); i += 3 {
 		thisTriangle := InitTriangle(vertices[i], vertices[i+1], vertices[i+2])
-		nMesh.Normals[index] = thisTriangle.Normal()
+		n := thisTriangle.Normal()
+		v0 := Vec.Sub(vertices[i], origin)
+		dv0 := Vec.Dot(n, v0)
+		if dv0 > 0 {
+			n.Scale(-1.0)
+		}
+		nMesh.Normals[i/3] = n
 		index++
 	}
 
@@ -83,19 +92,16 @@ func (t *Triangle) Collision(P *Vec.Vec32) (Vec.Vec32, bool) {
 
 }
 
-//Barycentric Focused Collision Test
-func (t *Triangle) BarycentricCollision(P Vec.Vec32, V Vec.Vec32, dt float32) (Vec.Vec32, Vec.Vec32, bool) {
+//Barycentric Focused Collision Test (returns Normal, Coords, CollisionPoint, Collision Bool)
+func (t *Triangle) BarycentricCollision(P Vec.Vec32, V Vec.Vec32, n Vec.Vec32, dt float32, r float32) (Vec.Vec32, Vec.Vec32, Vec.Vec32, bool) {
+
+	if Vec.Length(V) == 0 {
+		return n, Vec.Vec32{}, Vec.Vec32{}, false
+	}
+
 	t0 := *t.Verts[0]
 	//Take Care of Normal
-	n := t.Normal()
 	v0 := Vec.Sub(t0, P)
-	dv0 := Vec.Dot(n, v0)
-
-	//Point Normal Towards Point - If < 0 Normal is away from the point
-	if dv0 >= 0 {
-		n.Scale(-1.0)
-		dv0 = Vec.Dot(n, v0)
-	}
 
 	nDotRay := Vec.Dot(n, V)
 
@@ -109,41 +115,56 @@ func (t *Triangle) BarycentricCollision(P Vec.Vec32, V Vec.Vec32, dt float32) (V
 	p0 := Vec.Add(P, Vec.Scale(V, k)) //Projection to the plane
 	dist := Vec.Length(Vec.Sub(P, p0))
 
-	//Check the P1 is crossed current plane
-	p1 := Vec.Add(P, Vec.Scale(V, dt))
-	p10 := Vec.Sub(p1, p0)
-	dotp10 := Vec.Dot(n, p10)
+	//Check the P2 is crossed current plane
+	//- TODO SEE IF PROJECTED VELOCITY IS A BARYCENTRIC COLLISION
+	//	p1 := Vec.Add(P, Vec.Scale(V, dt)) //Actual projected vector
+	//	p10 := Vec.Sub(p1, p0)
+	//dotp10 := Vec.Dot(n, p10)
+	//	dist2 := Vec.Length(p10)
 
 	//Point Crossed the plane in a time step. We don't care about the actual collision point
-	//This needs to be scaled with velocity or time step needs to be decreased
-	if (dotp10 > 0 && dv0 < 0) && dist < 0.05 {
+	//This needs to be scaled with velocity or time step needs to be decreased (dotp10 > 0 && dv0 < 0) ||
+	if dist <= r {
 		coord, collision := t.Barycentric(&P)
-		return n, coord, collision
+		return n, coord, p0, collision
 	} else {
-		return n, Vec.Vec32{}, false
+		return n, Vec.Vec32{}, Vec.Vec32{}, false
 	}
 
 }
 
 //Given particle w/ velocity determine barycentric collisions and if a collision occurs
-//This code should be ray triangle intersection code similar to ray tracing. Returns flipped normal
-func (g *Mesh) Collision(P Vec.Vec32, V Vec.Vec32, dt float32) (Vec.Vec32, Vec.Vec32, bool) {
+//Rewrite Collider Code for recursive caller (if collision call again) //returns collision face index
+//When initially calling excludeFace should be -1 to avoid excluding any faces. Value is only tested against
+//Returns Normal, Barycentric Coords, Collision Point, Collision Bool, Exclusion Face
+func (g *Mesh) Collision(P Vec.Vec32, V Vec.Vec32, dt float32, r float32, excludeFace int) (Vec.Vec32, Vec.Vec32, Vec.Vec32, bool, int) {
 
 	VERTS := len(g.Vertexes)
 
 	for i := 0; i < VERTS; i += 3 {
-		triangle := InitTriangle(g.Vertexes[i], g.Vertexes[i+1], g.Vertexes[i+2])
 
-		fN, coord, c0 := triangle.BarycentricCollision(P, V, dt)
+		if i != excludeFace*3 {
+			normal := g.Normals[i/3]
+			triangle := InitTriangle(g.Vertexes[i], g.Vertexes[i+1], g.Vertexes[i+2])
+			fN, coord, p0, c0 := triangle.BarycentricCollision(P, V, normal, dt, r)
 
-		//Collision
-		if c0 {
-			return fN, coord, true
+			if c0 {
+				return fN, coord, p0, true, i / 3
+			}
 		}
 
 	}
 
-	return Vec.Vec32{}, Vec.Vec32{}, false
+	return Vec.Vec32{}, Vec.Vec32{}, Vec.Vec32{}, false, 0
+}
+
+func (g *Mesh) PrintNormals() {
+	fmt.Printf("Printing Triangle Normals: Order is {FRONT, BACK, BOTTOM, TOP,LEFT,RIGHT}\n\n")
+	VERTS := len(g.Vertexes)
+	for i := 0; i < VERTS; i += 3 {
+
+		fmt.Printf("N: %s\n", g.Normals[i/3].String())
+	}
 }
 
 //Planar Projection Transform of a triangle onto a Normal Vector
@@ -187,6 +208,7 @@ func (t *Triangle) Barycentric(p *Vec.Vec32) (Vec.Vec32, bool) {
 func Box(w float32, h float32, d float32, o Vec.Vec32) *Mesh {
 	const TRIANGLES = 12
 	var Verts = make([]Vec.Vec32, 12*3)
+
 	x := o[0]
 	y := o[1]
 	z := o[2]
@@ -233,12 +255,12 @@ func Box(w float32, h float32, d float32, o Vec.Vec32) *Mesh {
 
 	//LEFT FACE - X
 	Verts[24] = Vec.Vec32{x - p, y - q, z + s} //LFB
-	Verts[25] = Vec.Vec32{x - p, y + q, z + s} //LFT
-	Verts[26] = Vec.Vec32{x - p, y - q, z - s} //LBB
+	Verts[25] = Vec.Vec32{x - p, y - q, z - s} //LBB
+	Verts[26] = Vec.Vec32{x - p, y + q, z + s} //LTF
 
-	Verts[27] = Vec.Vec32{x - p, y + q, z + s} //LFT
+	Verts[27] = Vec.Vec32{x - p, y - q, z - s} //LBB
 	Verts[28] = Vec.Vec32{x - p, y + q, z - s} //LBT
-	Verts[29] = Vec.Vec32{x - p, y - q, z - s} //LBB
+	Verts[29] = Vec.Vec32{x - p, y + q, z + s} //LFT
 
 	//Right FACE - X
 	Verts[30] = Vec.Vec32{x + p, y + q, z + s} //LFT
@@ -249,7 +271,7 @@ func Box(w float32, h float32, d float32, o Vec.Vec32) *Mesh {
 	Verts[34] = Vec.Vec32{x + p, y + q, z - s} //RFB
 	Verts[35] = Vec.Vec32{x + p, y - q, z - s} //RBB
 
-	boxMesh := InitMesh(Verts)
+	boxMesh := InitMesh(Verts, o)
 	return &boxMesh
 
 }

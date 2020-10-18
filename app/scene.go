@@ -100,21 +100,21 @@ const (
 	PSync           = 0.04166  //seconds (24fps update
 	H20Mass         = 0.001    //kg/cm3
 	H20Visc         = 0.000091 //kg*(m/s)
-	H20Kern         = 0.6      //Smoothing Kernel
+	H20Kern         = 1        //Smoothing Kernel
 	H20LiqDensity   = 0.001    //kg/cm^3
 	SOS             = 1400.0   //m/s (maximal information transfer) 1480 m/s with sounds
 	Particles       = 20       //15,625 Particles -- 1.9MB Positional Data Ram
 	DefaultTimeStep = 0.1      //Evolution at Small Interval
-	EOSGamma        = 7        //Equation of State Exponent Feature
+	EOSGamma        = 8        //Equation of State Exponent Feature
 	PCISamples      = 20
 	SPHSamples      = 20
-	ParticleRadius  = 0.1
+	ParticleRadius  = 0.1 //2cm radius
 )
 
 //Initializes Default Fluisd Structure During Initialization
 func DefaultDslFl() *DslFlConfig {
 	//Syncs at 24 Frames with a 60FPS runtime. 0.041 Seconds
-	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -3.5}, 0.60, 0.5, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{0, 0, 0}}
+	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -2.5}, 1.0, 0.3, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{0, 0, 0.0}}
 }
 
 func RenderFluidGL(config *DslFlConfig) error {
@@ -130,7 +130,7 @@ func RenderFluidGL(config *DslFlConfig) error {
 	//Scale the Positions
 	U.ScalePositions(thisFluid.SPH.Positions, thisFluid.Config.MdlOrg, thisFluid.Config.PrtlScale)
 	//Set OpenGL Windowing Context with GLFW and GO-GL Bindings
-	glWindowProperties := AppWindow{2560, 1440, "Diesel Particle SPH"}
+	glWindowProperties := AppWindow{1920, 1080, "Diesel Particle SPH"}
 
 	//Perform OpenGL Setup..Need to Lock Thread for all OpenGL Context Calls
 	runtime.LockOSThread()
