@@ -71,11 +71,11 @@ func (K *GaussianKernel) Grad(distance float32, dir *V.Vec32) V.Vec32 {
 }
 
 func (K *GaussianKernel) F(distance float32) float32 {
-	if distance > K.H[0] {
+	if distance*distance > K.H[1] {
 		return 0.0
 	}
 	guassian := 315 / (64 * PI * K.H[2])
-	x := 1.0 - (distance * distance / K.H[1])
+	x := 1.0 - distance*distance/K.H[1]
 	return guassian * x * x * x
 }
 

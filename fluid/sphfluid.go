@@ -128,10 +128,10 @@ func (fluid *SPHFluid) Initialize(init *BoxFluidSystem, mpf *MassFluidParticle, 
 	fluid.Sampler = sampler.SPHSampler(25, fluid.Positions)
 	fluid.UpdateDensities() //Baseline density calculation
 	//Time step dependent on propogation of particle collisions
-	fluid.Timer.TS = float64((0.4 * fluid.Mfp.KernelRadius) / fluid.Mfp.SpeedSound)
+	fluid.Timer.TS = float64((0.4 * fluid.Mfp.KernelRadius) / (fluid.Mfp.SpeedSound * fluid.Mfp.SpeedSound))
 
 	//Update spherical fluid mass
-	fluid.Mfp.Mass = (4 / 3) * PI * fluid.Mfp.ParticleRadius * fluid.Mfp.ParticleRadius * fluid.Mfp.ParticleRadius * fluid.Mfp.Mass
+	//fluid.Mfp.Mass = fluid.Mfp.Mass / ((4 / 3) * PI * fluid.Mfp.ParticleRadius * fluid.Mfp.ParticleRadius * fluid.Mfp.ParticleRadius)
 }
 
 //Updates Densities associated with each particle position with Gaussian Kernel
@@ -143,12 +143,14 @@ func (fluid *SPHFluid) UpdateDensities() {
 		//For Each Particle Calculate Kernel Based Summation
 
 		samples := fluid.Sampler.GetSamples(fluid.Positions[i])
-		r0 := (fluid.Mfp.ParticleRadius * fluid.Mfp.ParticleRadius * fluid.Mfp.ParticleRadius) * PI * (4 / 3)
-		mass := fluid.Mfp.Mass / r0
+		mass := fluid.Mfp.Mass
 		density := float32(0.0)
 		for j := 0; j < len(samples); j++ {
-			dist := V.Length(V.Sub(fluid.Positions[i], fluid.Positions[samples[j]]))
-			density += mass * float32(fluid.GradKernel.F(dist))
+			if samples[j] != i {
+				dist := V.Length(V.Sub(fluid.Positions[i], fluid.Positions[samples[j]]))
+				weight := float32(fluid.ItrpKernel.F(dist))
+				density += (mass * weight)
+			}
 		}
 		if !math.IsNaN(float64(density)) {
 			fluid.Densities[i] = density
@@ -174,7 +176,7 @@ func (fluid *SPHFluid) DensityGradient(i int) V.Vec32 {
 			dir := V.Sub(fluid.Positions[samples[j]], fluid.Positions[i])
 			dist := V.Length(dir)
 			dir = V.Scale(dir, 1/dist)
-			grad := fluid.GradKernel.Grad(dist, &dir)
+			grad := fluid.ItrpKernel.Grad(dist, &dir)
 			estm := (mass / iDensity) + (mass / jDensity)
 			DensityGrad.Add(V.Scale(grad, -estm))
 		}
@@ -190,7 +192,7 @@ func (fluid *SPHFluid) Pressure(i int) {
 	//For Each Particle Calculate Kernel Based Summation
 
 	samples := fluid.Sampler.GetSamples(fluid.Positions[i])
-	mass := fluid.Mfp.Mass / (fluid.Mfp.ParticleRadius * fluid.Mfp.ParticleRadius * fluid.Mfp.ParticleRadius) * PI * (4 / 3)
+	mass := fluid.Mfp.Mass
 	dens := fluid.Densities[i]
 	msq := mass * mass
 	F := float32(0.0)
@@ -253,18 +255,19 @@ func (fluid *SPHFluid) External(i int, f V.Vec32) {
 //factor to the negative pressure. typically < 1.0
 func (fluid *SPHFluid) PressureEOS(i int, negativePressure float32) {
 	//reference density : volumetric distribution of particle mass through
-	r0 := (fluid.Mfp.ParticleRadius * fluid.Mfp.ParticleRadius * fluid.Mfp.ParticleRadius) * PI * (4 / 3)
-	r0 = fluid.Mfp.Mass / r0
+	r0 := fluid.Mfp.Mass
 	eosExponent := fluid.Mfp.EosExp
-	eosScale := (r0 * fluid.Mfp.SpeedSound) / eosExponent //(r0 * fluid.Mfp.SpeedSound * fluid.Mfp.SpeedSound) / eosExponent
+	eosScale := (r0 * fluid.Mfp.SpeedSound * fluid.Mfp.SpeedSound) / eosExponent
 	density := fluid.Densities[i]
 	if density > 0 {
-		p := (eosScale/eosExponent)*(float32(math.Pow(float64(density/r0), float64(eosExponent)))-1.0) + r0
+		p := (eosScale) * (float32(math.Pow(float64(density/r0-1.0), float64(eosExponent))))
 		if p < 0 {
 			p *= negativePressure //Negative Pressure Scaling
 		}
 		if !math.IsNaN(float64(p)) {
 			fluid.Pressures[i] = p
+		} else {
+			fluid.Pressures[i] = 1.0
 		}
 	}
 }
@@ -273,13 +276,13 @@ func (fluid *SPHFluid) PressureEOS(i int, negativePressure float32) {
 //Initially called with e (exclusion face index set to -1). If this function
 //Is not called this way then behavior is unspecified.
 func (fluid *SPHFluid) Collide(index int, frames int, e int) {
-	for frames <= 1 { //Multi-Boundary Projected Collision
+	for frames <= 0 { //Multi-Boundary Projected Collision
 		frames++
 		normal, _, pos, collision, exclude := fluid.Colliders.Collision(fluid.Positions[index], fluid.Velocities[index], float32(fluid.Timer.TS), fluid.Mfp.ParticleRadius, e)
 		if collision {
-			v, _ := fluid.CalcCollision(index, normal)
+			v, f := fluid.CalcCollision(index, normal)
 			fluid.Positions[index] = pos
-			//	fluid.Forces[index] = f //keep external force constants?
+			fluid.Forces[index] = f //keep external force constants?
 			fluid.Velocities[index] = v
 			fluid.Collide(index, frames, exclude)
 
@@ -326,7 +329,7 @@ func (fluid *SPHFluid) Update(index int) error {
 
 	//Clear Particle Force State
 	fluid.Forces[index] = V.Vec32{0.0, 0.0, 0.0}
-	//fluid.Densities[index] = fluid.Mfp.Mass
+	//	fluid.Densities[index] = fluid.Mfp.Mass
 
 	return nil
 }
@@ -348,7 +351,7 @@ func (fluid *SPHFluid) Compute(threadStatus chan int, secondsAdvance float64) er
 
 		for i := 0; i < FLUID; i++ {
 
-			fluid.PressureEOS(i, 0) //Negative Pressure Scale 0
+			fluid.PressureEOS(i, 0.001) //Negative Pressure Scale 0
 			fluid.Pressure(i)
 			fluid.Viscosity(i)
 			fluid.External(i, EXTERNAL)

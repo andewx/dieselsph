@@ -98,15 +98,15 @@ type DSLFluidRenderer struct {
 //All Vars are metric - metric constants for water
 const (
 	PSync           = 0.04166  //seconds (24fps update
-	H20Mass         = 0.001    //kg/cm3
+	H20Mass         = 1.0      //kg/cm3
 	H20Visc         = 0.000091 //kg*(m/s)
-	H20Kern         = 1        //Smoothing Kernel
-	H20LiqDensity   = 0.001    //kg/cm^3
+	H20Kern         = 0.6      //Smoothing Kernel
+	H20LiqDensity   = 1.0      //g/cm^3
 	SOS             = 1400.0   //m/s (maximal information transfer) 1480 m/s with sounds
-	Particles       = 20       //15,625 Particles -- 1.9MB Positional Data Ram
-	DefaultTimeStep = 0.1      //Evolution at Small Interval
-	EOSGamma        = 8        //Equation of State Exponent Feature
-	PCISamples      = 20
+	Particles       = 15       //15,625 Particles -- 1.9MB Positional Data Ram
+	DefaultTimeStep = 0.00001  //Evolution at Small Interval
+	EOSGamma        = 7        //Equation of State Exponent Feature
+	PCISamples      = 10
 	SPHSamples      = 20
 	ParticleRadius  = 0.1 //2cm radius
 )
@@ -114,7 +114,7 @@ const (
 //Initializes Default Fluisd Structure During Initialization
 func DefaultDslFl() *DslFlConfig {
 	//Syncs at 24 Frames with a 60FPS runtime. 0.041 Seconds
-	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -2.5}, 1.0, 0.3, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{0, 0, 0.0}}
+	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -2.5}, 1.0, 0.6, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{0, 0, 0.0}}
 }
 
 func RenderFluidGL(config *DslFlConfig) error {

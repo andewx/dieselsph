@@ -124,7 +124,7 @@ func (t *Triangle) BarycentricCollision(P Vec.Vec32, V Vec.Vec32, n Vec.Vec32, d
 
 	//Point Crossed the plane in a time step. We don't care about the actual collision point
 	//This needs to be scaled with velocity or time step needs to be decreased (dotp10 > 0 && dv0 < 0) ||
-	if dist <= r {
+	if dist <= r*2 {
 		coord, collision := t.Barycentric(&P)
 		return n, coord, p0, collision
 	} else {
