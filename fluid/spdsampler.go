@@ -122,7 +122,7 @@ func (s SPDSampler) Run(status chan int) {
 	}
 }
 
-//Maps a standard deviation to an index
+//Maps a standard deviation to an index - Heurustic based index
 func (s SPDSampler) MapDeviation(v V.Vec32) int {
 	vIdx := 0
 	x := (V.Length(v) - s.MDist)
@@ -195,6 +195,7 @@ func (s SPDSampler) MapIndexes() error {
 
 	//Clear the bit arrays
 	s.ClearOccupancy()
+	seekLeft := false
 
 	for i := 0; i < len(s.Positions); i++ {
 		v := s.Positions[i]
@@ -203,16 +204,17 @@ func (s SPDSampler) MapIndexes() error {
 		//Check the bit occupancy and flag when location is valid
 		b := s.GetIndexBit(vIdx)
 		if !b {
+			s.FlagIndexBit(vIdx)
 			s.IdxPos[vIdx] = i
 		} else {
 			//Perform Positional Seek only seek len(Positions) times max
 			locationFound := false
-			seekLeft := false
+
 			seeks := 0
 			for !locationFound && seeks < s.P {
 
 				//Check if we have hit any bounds
-				bitAvail := false
+				bitOccup := false
 				if !seekLeft {
 					vIdx++
 				} else {
@@ -224,15 +226,15 @@ func (s SPDSampler) MapIndexes() error {
 				}
 
 				//See if the current bit is available
-				bitAvail = s.GetIndexBit(vIdx)
-				if bitAvail {
+				bitOccup = s.GetIndexBit(vIdx)
+				if !bitOccup {
 					s.IdxPos[vIdx] = i
 					s.FlagIndexBit(vIdx)
 					locationFound = true
 				}
 				seeks++
 
-				if seeks > s.P {
+				if seeks > s.P || vIdx < 1 {
 					return fmt.Errorf("SPD Sampler Bit Location Not Found!\n")
 				}
 
@@ -254,14 +256,14 @@ func (s SPDSampler) FlagIndexBit(idx int) {
 	//Create the masking uint at the required index
 	mask := uint64(1)
 	nmask := uint64(0)
-	idx2buf := int(idx / s.P)           //floored value
+	idx2buf := int(idx / 64)            //floored value uint 64
 	offset := (idx % 64)                //bit offset should be 0 - 64
 	occupIndexValue := s.Occup[idx2buf] //current bit state
 
 	if s.BigEndian {
 		nmask = mask >> offset
 	} else {
-		nmask = mask << (64 - offset)
+		nmask = mask << (63 - offset)
 	}
 
 	nIdxValue := occupIndexValue | nmask //OR'D
@@ -274,15 +276,15 @@ func (s SPDSampler) GetIndexBit(idx int) bool {
 	//Create the masking uint at the required index
 	mask := uint64(1)
 	nmask := uint64(0)
-	idx2buf := int(idx / s.P)           //floored value
+	idx2buf := int(idx / 64)            //floored value
 	offset := (idx % 64)                //bit offset should be 0 - 64
 	occupIndexValue := s.Occup[idx2buf] //current bit state
 	if s.BigEndian {
 		nmask = mask >> offset
 	} else {
-		nmask = mask << (64 - offset)
+		nmask = mask << (63 - offset)
 	}
-	val := occupIndexValue & nmask //AND'D
+	val := (occupIndexValue & nmask) >> (63 - offset) //AND'D
 	if val == 1 {
 		return true
 	}

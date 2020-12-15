@@ -21,9 +21,14 @@ const (
 
 func TestSPDSampler(t *testing.T) {
 	var mfp = MassFluidParticle{H20Mass, H20Visc, H20Kern, H20Kern, PSync, SOS, H20Mass, EOSGamma}
-	var boxfluid = BoxFluidSystem{V.Vec32{0, 0, 0}, 2.0, 2.0, 2.0, 8, 8, 8} //Box System Description
+	var boxfluid = BoxFluidSystem{V.Vec32{0, 0, 0}, 2.0, 2.0, 2.0, 5, 5, 5} //Box System Description
 	var sphfluid = SPHFluid{}                                               //Main Fluid Component
 	sphfluid.Initialize(&boxfluid, &mfp, V.Vec32{0, 0, 0})
-
+	//Print All Indexes and Check that all Indexes are included
+	//Every 5
+	for i := 0; i < 5*5*5; i++ {
+		fmt.Printf("%d: [%d]\n ", i, sphfluid.Sampler.IdxPos[i])
+	}
+	fmt.Println()
 	fmt.Printf("Test Passed")
 }

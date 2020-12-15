@@ -60,7 +60,8 @@ type DslFlConfig struct {
 	PrtlScale    float32 //Scale and Transform Initialized Particle Field towards origin (1 for no transform)
 	GridInterval float64 //seconds Until SPH Grid is recalculated
 	PrtlInterval float64 //seconds Until Particle CPU Vertex Buffer Is Updated
-	PrtlMass     float32 //Particle Dynamics
+	PrtlMass     float32 //Particle Dynamics - Scaled Mass / Density
+	PrtlRadius   float32 //Particle Radius
 	KrnlRadius   float32 //Particle Kernel Radius
 	EOSDens      float32 //Particle State Density
 	SOS          float32 //Particle Speed of Sound
@@ -98,23 +99,28 @@ type DSLFluidRenderer struct {
 //All Vars are metric - metric constants for water
 const (
 	PSync           = 0.04166  //seconds (24fps update
-	H20Mass         = 1.0      //kg/cm3
+	H20Mass         = 997.0    //kg/m3 (metric mass vol)
 	H20Visc         = 0.000091 //kg*(m/s)
-	H20Kern         = 0.6      //Smoothing Kernel
+	H20Kern         = 2.3      //Most important var - fine tune for fluid
 	H20LiqDensity   = 1.0      //g/cm^3
-	SOS             = 1400.0   //m/s (maximal information transfer) 1480 m/s with sounds
+	SOS             = 1480.0   //m/s (maximal information transfer) 1480 m/s with sounds
 	Particles       = 15       //15,625 Particles -- 1.9MB Positional Data Ram
 	DefaultTimeStep = 0.00001  //Evolution at Small Interval
 	EOSGamma        = 7        //Equation of State Exponent Feature
 	PCISamples      = 10
-	SPHSamples      = 20
-	ParticleRadius  = 0.1 //2cm radius
+	SPHSamples      = 10
+	ParticleRadius  = 0.01 //Particle Radius (10 CM Particle)
 )
+
+//Cubic Volume :)
+func GetVolume(radius float32) float32 {
+	return (radius * radius * radius)
+}
 
 //Initializes Default Fluisd Structure During Initialization
 func DefaultDslFl() *DslFlConfig {
 	//Syncs at 24 Frames with a 60FPS runtime. 0.041 Seconds
-	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -2.5}, 1.0, 0.6, 5.0, PSync, H20Mass, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{0, 0, 0.0}}
+	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -2.5}, 1.0, 0.5, 5.0, PSync, H20Mass * GetVolume(ParticleRadius), ParticleRadius, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{0, 0, 0.0}}
 }
 
 func RenderFluidGL(config *DslFlConfig) error {
