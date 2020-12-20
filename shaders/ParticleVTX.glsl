@@ -22,7 +22,7 @@ void main()
 
     fluidColor = vec4(0.3,0.3,0.3, 0.2); // Gray
     if(mode == 0 ){
-    fluidColor = vec4(0.3,0.4,0.8, 1.0); // Blue Points
+    fluidColor = vec4(0.6,0.75,0.6, 1.0); // Blue Points
     }
 
 }

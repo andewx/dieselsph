@@ -49,6 +49,7 @@ const (
 	SPD_THREAD_RUN       = 60 //Spatial Hash Grid Thread Working.
 	DENSITY_THREAD_RUN   = 100
 	DENSITY_THREAD_WAIT  = 101
+	ERROR                = 404
 )
 
 //Our configuration sturction for Initialization of the Renderer Duplicates Fluid Parameters so we can pass them
@@ -98,18 +99,19 @@ type DSLFluidRenderer struct {
 
 //All Vars are metric - metric constants for water
 const (
-	PSync           = 0.04166  //seconds (24fps update
-	H20Mass         = 997.0    //kg/m3 (metric mass vol)
-	H20Visc         = 0.000091 //kg*(m/s)
-	H20Kern         = 2.3      //Most important var - fine tune for fluid
-	H20LiqDensity   = 1.0      //g/cm^3
-	SOS             = 1480.0   //m/s (maximal information transfer) 1480 m/s with sounds
-	Particles       = 15       //15,625 Particles -- 1.9MB Positional Data Ram
-	DefaultTimeStep = 0.00001  //Evolution at Small Interval
-	EOSGamma        = 7        //Equation of State Exponent Feature
-	PCISamples      = 10
-	SPHSamples      = 10
-	ParticleRadius  = 0.01 //Particle Radius (10 CM Particle)
+	PSync             = 0.04166  //seconds (24fps update
+	H20Mass           = 1000.0   //kg/m3 (metric mass vol)
+	H20Visc           = 0.000091 //kg*(m/s)
+	H20Kern           = 0.25     //Most important var - fine tune for fluid
+	H20LiqDensity     = 1.0      //g/cm^3
+	SOS               = 1400.0   //m/s (maximal information transfer) 1480 m/s with sounds
+	Particles         = 15       //15,625 Particles -- 1.9MB Positional Data Ram
+	DefaultTimeStep   = 0.00001  //Evolution at Small Interval
+	EOSGamma          = 7        //Equation of State Exponent Feature
+	PCISamples        = 10
+	SPHSamples        = 10
+	ParticleRadius    = 0.1 //Particle Radius (10 CM Particle)
+	SPHScaleParticles = 0.8
 )
 
 //Cubic Volume :)
@@ -120,15 +122,17 @@ func GetVolume(radius float32) float32 {
 //Initializes Default Fluisd Structure During Initialization
 func DefaultDslFl() *DslFlConfig {
 	//Syncs at 24 Frames with a 60FPS runtime. 0.041 Seconds
-	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -2.5}, 1.0, 0.5, 5.0, PSync, H20Mass * GetVolume(ParticleRadius), ParticleRadius, H20Kern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{0, 0, 0.0}}
+	KParticleRad := float32(SPHScaleParticles / Particles)
+	HKern := float32(KParticleRad * 18)
+	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -2.5}, 1.0, SPHScaleParticles, 5.0, PSync, H20Mass, KParticleRad, HKern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{-0.005, 0, 0.0}}
 }
 
 func RenderFluidGL(config *DslFlConfig) error {
 
 	//Fluid Setup
-	var mfp = F.MassFluidParticle{config.PrtlMass, config.Viscos, config.KrnlRadius, ParticleRadius, DefaultTimeStep, config.SOS, config.EOSDens, EOSGamma}
-	var boxfluid = F.BoxFluidSystem{config.MdlOrg, config.MdlW, config.MdlW, config.MdlW, config.CU, config.CU, config.CU} //Box System Description
-	var sphfluid = F.SPHFluid{}                                                                                            //Main Fluid Component
+	var mfp = F.AllocMassFluidParticle(H20Mass, ParticleRadius, H20Kern)
+	var boxfluid = F.BoxFluidSystem{config.MdlOrg, config.MdlW, config.MdlW, config.MdlW, config.CU, config.CU, config.CU}
+	var sphfluid = F.SPHFluid{} //Main Fluid Component
 	sphfluid.Initialize(&boxfluid, &mfp, config.InitialVel)
 	var thisTimer = AnimationTimer{time.Now(), time.Now(), time.Now(), time.Now(), time.Now()}
 	var thisFluid = DSLFluidRenderer{&sphfluid, DefaultDslFl(), &thisTimer, make(map[string]int), make(map[string]V.Vec32), make(map[string]V.Mat4), make(map[string]float32), nil}
@@ -163,11 +167,12 @@ func (this *DSLFluidRenderer) Run() {
 	var densityStatus chan int = make(chan int)
 	spdinterval := float64(0.09) //Sync Every 2.0 Seconds
 	densityinterval := float64(0.01)
+	samplerError := false
 
 	//Thread Most of the Fluid Routines // For Example Collision // Density Updates Etc
 	go this.SPH.Compute(fluidStatus, this.Config.PrtlInterval)
-	go this.SPH.Sampler.Run(samplerStatus)
 	go this.SPH.ComputeDensities(densityStatus)
+	go this.SPH.Sampler.Run(samplerStatus)
 
 	this.Anim.LastSamplerSync = time.Now()
 	this.Anim.LastDensitySync = time.Now()
@@ -178,11 +183,14 @@ func (this *DSLFluidRenderer) Run() {
 		Draw(this.SPH, this.Context, this.Anim, this.Config.PrtlInterval, fluidStatus)
 
 		//Update the Spatial Sampler Thread
-		if time.Now().Sub(this.Anim.LastSamplerSync).Seconds() > spdinterval {
+		if time.Now().Sub(this.Anim.LastSamplerSync).Seconds() > spdinterval && !samplerError {
 			sampleSyncStatus := <-samplerStatus
 			if sampleSyncStatus == SPD_THREAD_SYNCED {
 				samplerStatus <- SPD_THREAD_RUN
 				this.Anim.LastSamplerSync = time.Now()
+			}
+			if sampleSyncStatus == ERROR {
+				samplerError = true
 			}
 
 		}

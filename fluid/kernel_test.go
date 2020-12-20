@@ -5,7 +5,7 @@ import "testing"
 import "fmt"
 
 func TestKernel(t *testing.T) {
-	var cubicKernel CubicKernel = InitCubic(15.0)
+	var splineKern = AllocBSplineKernel(1.0)
 
 	//Test Kernel Weights Given Distance
 	var dist [6]float32
@@ -18,7 +18,7 @@ func TestKernel(t *testing.T) {
 	dist[5] = 0.01
 
 	for i := 0; i < 6; i++ {
-		weight := cubicKernel.F(dist[i])
+		weight := splineKern.F(dist[i])
 		fmt.Printf("F(%f) = %f\n", dist[i], weight)
 	}
 

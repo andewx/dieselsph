@@ -63,6 +63,8 @@ var xT float64
 var yT float64
 var RotAngleX float32
 var RotAngleY float32
+var Fps float64
+var lastTime time.Time
 
 // initGlfw initializes glfw and returns a Window to use.
 func InitGLFW(a *AppWindow) *glfw.Window {
@@ -72,6 +74,7 @@ func InitGLFW(a *AppWindow) *glfw.Window {
 
 	state_hold_mouse = false
 	RotateTime = time.Now()
+	lastTime = time.Now()
 
 	glfw.WindowHint(glfw.Resizable, glfw.False)
 	glfw.WindowHint(glfw.ContextVersionMajor, 4) // OR 2
@@ -207,9 +210,9 @@ func SetRotMatrix(dsl *DieselContext) {
 
 func Draw(sph *F.SPHFluid, dsl *DieselContext, anim *AnimationTimer, interval float64, c chan int) {
 
-	//Timer Function in Seconds
-	//elapse_s := lastTime.Sub(time.Now()).Seconds()
-	//fps := 1 / elapse_s
+	//FPS
+	elapse_s := lastTime.Sub(time.Now()).Seconds()
+	Fps = 1 / elapse_s
 
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 	gl.ClearColor(0.9, 0.9, 0.9, 1.0)
@@ -326,27 +329,39 @@ func compileShader(source string, shaderType uint32) (uint32, error) {
 }
 
 func ProcessInput(w *glfw.Window, key glfw.Key, scancode int, action glfw.Action, mods glfw.ModifierKey) {
-	cameraSpeed := float32(0.1) // adjust accordingly
+	cameraSpeed := float32(0.009) // adjust accordingly - Just use framerate
+
+	trans := cameraSpeed
+
 	if key == glfw.KeyW {
 		//Accumulates the translation Vector
 		p := V.Vec32{0.0, 0.0, -1.0}
-		GlobalTrans.Add(*p.Scale(cameraSpeed))
+		GlobalTrans.Add(*p.Scale(trans))
 	}
 	if key == glfw.KeyS {
 		//Accumulates the translation Vector
 		p := V.Vec32{0.0, 0.0, 1.0}
-		GlobalTrans.Add(*p.Scale(cameraSpeed))
+		GlobalTrans.Add(*p.Scale(trans))
 	}
 	if key == glfw.KeyA {
 		//Accumulates the translation Vector
 		//Accumulates the translation Vector
 		p := V.Vec32{-1.0, 0.0, 0.0}
-		GlobalTrans.Add(*p.Scale(cameraSpeed))
+		GlobalTrans.Add(*p.Scale(trans))
 	}
 	if key == glfw.KeyD {
 		//Accumulates the translation Vector
 		p := V.Vec32{1.0, 0.0, 0.0}
-		GlobalTrans.Add(*p.Scale(cameraSpeed))
+		GlobalTrans.Add(*p.Scale(trans))
+	}
+
+	if key == glfw.KeyUp {
+		p := V.Vec32{0.0, -1.0, 0.0}
+		GlobalTrans.Add(*p.Scale(trans))
+	}
+	if key == glfw.KeyDown {
+		p := V.Vec32{0.0, 1.0, 0.0}
+		GlobalTrans.Add(*p.Scale(trans))
 	}
 }
 

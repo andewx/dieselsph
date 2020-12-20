@@ -36,20 +36,20 @@ func TestGeometry(t *testing.T) {
 
 	G := InitMesh(meshVerts, vector.Vec32{})
 	vel := vector.Vec32{0, 0, -1}
-	n1, P0, _, c0, _ := G.Collision(P1, vel, 0.1, 0.1, -1)
-	n2, P3, _, c1, _ := G.Collision(P2, vel, 0.1, 0.1, -1)
+	n1, P0, _, c0 := G.Collision(P1, vel, 0.1, 0.1)
+	n2, P3, _, c1 := G.Collision(P2, vel, 0.1, 0.1)
 
 	i := 0
 	for !c0 && i < 10 {
 		npoint := vector.Add(P1, vector.Scale(vel, float32(i)*0.1))
-		n1, P0, _, c0, _ = G.Collision(npoint, vel, 0.1, 0.1, -1)
+		n1, P0, _, c0 = G.Collision(npoint, vel, 0.1, 0.1)
 		i++
 	}
 
 	i = 0
 	for !c1 && i < 10 {
 		npoint := vector.Add(P2, vector.Scale(vel, float32(i)*0.1))
-		n2, P3, _, c1, _ = G.Collision(npoint, vel, 0.1, 0.1, -1)
+		n2, P3, _, c1 = G.Collision(npoint, vel, 0.1, 0.1)
 		i++
 	}
 

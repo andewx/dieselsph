@@ -124,7 +124,7 @@ func (t *Triangle) BarycentricCollision(P Vec.Vec32, V Vec.Vec32, n Vec.Vec32, d
 
 	//Point Crossed the plane in a time step. We don't care about the actual collision point
 	//This needs to be scaled with velocity or time step needs to be decreased (dotp10 > 0 && dv0 < 0) ||
-	if dist <= r*2 {
+	if dist <= r {
 		coord, collision := t.Barycentric(&P)
 		return n, coord, p0, collision
 	} else {
@@ -137,25 +137,22 @@ func (t *Triangle) BarycentricCollision(P Vec.Vec32, V Vec.Vec32, n Vec.Vec32, d
 //Rewrite Collider Code for recursive caller (if collision call again) //returns collision face index
 //When initially calling excludeFace should be -1 to avoid excluding any faces. Value is only tested against
 //Returns Normal, Barycentric Coords, Collision Point, Collision Bool, Exclusion Face
-func (g *Mesh) Collision(P Vec.Vec32, V Vec.Vec32, dt float32, r float32, excludeFace int) (Vec.Vec32, Vec.Vec32, Vec.Vec32, bool, int) {
+func (g *Mesh) Collision(P Vec.Vec32, V Vec.Vec32, dt float32, r float32) (Vec.Vec32, Vec.Vec32, Vec.Vec32, bool) {
 
 	VERTS := len(g.Vertexes)
 
 	for i := 0; i < VERTS; i += 3 {
+		normal := g.Normals[i/3]
+		triangle := InitTriangle(g.Vertexes[i], g.Vertexes[i+1], g.Vertexes[i+2])
+		fN, coord, p0, c0 := triangle.BarycentricCollision(P, V, normal, dt, r)
 
-		if i != excludeFace*3 {
-			normal := g.Normals[i/3]
-			triangle := InitTriangle(g.Vertexes[i], g.Vertexes[i+1], g.Vertexes[i+2])
-			fN, coord, p0, c0 := triangle.BarycentricCollision(P, V, normal, dt, r)
-
-			if c0 {
-				return fN, coord, p0, true, i / 3
-			}
+		if c0 {
+			return fN, coord, p0, true
 		}
 
 	}
 
-	return Vec.Vec32{}, Vec.Vec32{}, Vec.Vec32{}, false, 0
+	return Vec.Vec32{}, Vec.Vec32{}, Vec.Vec32{}, false
 }
 
 func (g *Mesh) PrintNormals() {
