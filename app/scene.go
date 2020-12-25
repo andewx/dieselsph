@@ -5,6 +5,7 @@ import (
 	F "diesel.com/diesel/fluid"
 	U "diesel.com/diesel/utils"
 	V "diesel.com/diesel/vector"
+	"fmt"
 	"github.com/go-gl/glfw/v3.2/glfw"
 	"runtime"
 	"time"
@@ -105,13 +106,13 @@ const (
 	H20Kern           = 0.25     //Most important var - fine tune for fluid
 	H20LiqDensity     = 1.0      //g/cm^3
 	SOS               = 1400.0   //m/s (maximal information transfer) 1480 m/s with sounds
-	Particles         = 15       //15,625 Particles -- 1.9MB Positional Data Ram
+	Particles         = 20       //15,625 Particles -- 1.9MB Positional Data Ram
 	DefaultTimeStep   = 0.00001  //Evolution at Small Interval
 	EOSGamma          = 7        //Equation of State Exponent Feature
 	PCISamples        = 10
 	SPHSamples        = 10
 	ParticleRadius    = 0.1 //Particle Radius (10 CM Particle)
-	SPHScaleParticles = 0.8
+	SPHScaleParticles = 0.5
 )
 
 //Cubic Volume :)
@@ -124,14 +125,14 @@ func DefaultDslFl() *DslFlConfig {
 	//Syncs at 24 Frames with a 60FPS runtime. 0.041 Seconds
 	KParticleRad := float32(SPHScaleParticles / Particles)
 	HKern := float32(KParticleRad * 18)
-	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -2.5}, 1.0, SPHScaleParticles, 5.0, PSync, H20Mass, KParticleRad, HKern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{-0.005, 0, 0.0}}
+	return &DslFlConfig{Particles, V.Vec32{0.0, 0.0, -2.5}, 1.0, SPHScaleParticles, 5.0, PSync, H20Mass, KParticleRad, HKern, H20LiqDensity, SOS, H20Visc, PARTICLE_POINT, SPHSamples, PCISamples, V.Vec32{0, 0, 0.0}}
 }
 
 func RenderFluidGL(config *DslFlConfig) error {
 
 	//Fluid Setup
-	var mfp = F.AllocMassFluidParticle(H20Mass, ParticleRadius, H20Kern)
 	var boxfluid = F.BoxFluidSystem{config.MdlOrg, config.MdlW, config.MdlW, config.MdlW, config.CU, config.CU, config.CU}
+	var mfp = F.AllocMassFluidParticle(boxfluid, SPHScaleParticles)
 	var sphfluid = F.SPHFluid{} //Main Fluid Component
 	sphfluid.Initialize(&boxfluid, &mfp, config.InitialVel)
 	var thisTimer = AnimationTimer{time.Now(), time.Now(), time.Now(), time.Now(), time.Now()}
@@ -141,13 +142,16 @@ func RenderFluidGL(config *DslFlConfig) error {
 	U.ScalePositions(thisFluid.SPH.Positions, thisFluid.Config.MdlOrg, thisFluid.Config.PrtlScale)
 	//Set OpenGL Windowing Context with GLFW and GO-GL Bindings
 	glWindowProperties := AppWindow{1920, 1080, "Diesel Particle SPH"}
-
-	//Perform OpenGL Setup..Need to Lock Thread for all OpenGL Context Calls
+	//Perform OpenGL Setup..Need to Lock Thread fr all OpenGL Context Calls
 	runtime.LockOSThread()
 	window := InitGLFW(&glWindowProperties)
+	if window == nil {
+		return fmt.Errorf("Could not Initiate GLFW Context Window\n")
+	}
 	defer glfw.Terminate()
 	dieselContext, err := InitOpenGL(thisFluid.SPH) //Bind buffers to Initialized Fluid Block.
 	if checkError(err) {
+		fmt.Printf("Could Not Initial OPENGL CONTEXT\n\n")
 		return err
 	}
 

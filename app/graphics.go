@@ -69,7 +69,7 @@ var lastTime time.Time
 // initGlfw initializes glfw and returns a Window to use.
 func InitGLFW(a *AppWindow) *glfw.Window {
 	if err := glfw.Init(); err != nil {
-		panic(err)
+		return nil
 	}
 
 	state_hold_mouse = false

@@ -110,13 +110,11 @@ func (K *BSplineKernel) F(x float32) float32 {
 
 	s := (2 - r)
 	s = s * s * s
-	q := (1 - r)
-	q = q * q * q
 
-	ret := K.A * s
+	ret := K.A * (1 / 6) * s
 
 	if r < 1.0 {
-		ret = K.A * (s - 4*q)
+		ret = K.A * ((0.6666) - (r * r) + (0.5 * r * r * r))
 	}
 
 	return ret
@@ -131,12 +129,12 @@ func (K *BSplineKernel) O1D(x float32) float32 {
 	}
 
 	s := 2 - r
-	s = 3 * s * s
+	s = -0.5 * s * s
 
 	ret := K.A * s
 
 	if r < 1.0 {
-		ret = K.A * (3 * r) * ((3 * r) - 4)
+		ret = K.A * (-2*r + 1.5*r*r)
 	}
 
 	return ret
@@ -151,10 +149,10 @@ func (K *BSplineKernel) O2D(x float32) float32 {
 	}
 
 	s := 2 - r
-	ret := 6 * K.A * s
+	ret := K.A * s
 
 	if r < 1.0 {
-		ret = 6 * K.A * ((3 * r) - 2)
+		ret = K.A * (-2 + 3*r)
 	}
 
 	return ret
@@ -166,20 +164,18 @@ func (K *BSplineKernel) O2D(x float32) float32 {
 //Then Additionally modify Kernel.H with the returned value
 func (K *BSplineKernel) Adjust(densityRatio float32) float32 {
 	p := float64(densityRatio)
-	k := 2.0
+	k := 10.0
 	b := 0.25
 
 	h := k*math.Exp(-p) + b
 	K.H0 = K.H * float32(h)
-	K.A = 1 / (4 * PI * K.H0 * K.H0 * K.H0)
 
 	return float32(h)
 }
 
 //gradient
 func (K *BSplineKernel) Grad(x float32, dir *V.Vec32) V.Vec32 {
-	K.A = 1 / (4 * PI * K.H0 * K.H0 * K.H0)
-	return V.Scale(*dir, K.O1D(x))
+	return V.Scale(*dir, -K.O1D(x))
 }
 
 ////////////ALLOCATION FUNCTION //////////////
@@ -207,6 +203,6 @@ func InitCubic(radius float32) CubicKernel {
 
 func AllocBSplineKernel(h float32) BSplineKernel {
 	bSpline := BSplineKernel{h, h, 0}
-	bSpline.A = 1 / (4 * PI * h * h * h)
+	bSpline.A = 3 / (2 * PI * h * h * h)
 	return bSpline
 }

@@ -8,8 +8,8 @@ import (
 )
 
 const MAX_DIM = 15
-const LOAD_FACTOR = 2.0
-const VOXEL_SAMPLES = 30
+const LOAD_FACTOR = 2.5
+const VOXEL_SAMPLES = 20
 const THREAD_ERROR = 404
 const THREAD_RUN_SAMPLER = 60
 const THREAD_WAIT_SAMPLER = 61
@@ -29,14 +29,15 @@ type VoxelArray struct {
 	PositionsRef            []V.Vec32
 	VoxelDescriptor         VRanges
 	ComponentStorageSizeMax int
-	Voxel                   [][][][]int
+	Voxel                   [][]int
 	PVoxelIdx               ParticleVoxelArray
+	Utilized                int
 }
 
 //Stores the X,Y,Z, POSITION For Particle References in the Grid
 //Header Positions Will Return X,Y,Z,0 Quartet
 type VoxelIndex struct {
-	VoxIndex [4]int
+	VoxIndex [2]int
 }
 
 //Neighbor Volume Look Structure - Nil Refs Out Of Bounds - Includes Center
@@ -52,9 +53,10 @@ type ParticleVoxelArray struct {
 //Allocates 1.5 x Number Particles Voxel Based Array At A Resolution Not To Exceed MAX_DIM
 //If A Particle Cannot Be Added To the Voxel Bucket It will attempt to insert in Neighbor Grids
 //If No Positions Are Found In The Neighbor Grid The Particle Index Won't Be Added Or Updated
-func AllocateVoxelStorage(positions []V.Vec32, res int, num_particles int, scale_grid float32) *VoxelArray {
+func AllocateVoxelStorage(positions []V.Vec32, res int, scale_grid float32) *VoxelArray {
 	//Determine Bucket Header length
 	buckets := res * res * res
+	num_particles := len(positions)
 	bucketLength := int(float32(num_particles/buckets)*float32(LOAD_FACTOR) + 1.0)
 
 	//Set Main Voxel Headers
@@ -68,95 +70,103 @@ func AllocateVoxelStorage(positions []V.Vec32, res int, num_particles int, scale
 	VDescrip.Buckets = bucketLength
 	VDescrip.DivLength = (VDescrip.Max - VDescrip.Min) / float32(res)
 	VoxelStorage.VoxelDescriptor = VDescrip
-	VoxelStorage.PVoxelIdx = ParticleVoxelArray{make([]VoxelIndex, num_particles)}
+	VoxelStorage.PVoxelIdx = ParticleVoxelArray{make([]VoxelIndex, len(positions))}
 	VoxelStorage.VoxelDescriptor.Particles = num_particles
-
 	//Loop Construct Storage Structure
-	VoxelStorage.Voxel = make([][][][]int, res)
-	for i := 0; i < res; i++ {
-		VoxelStorage.Voxel[i] = make([][][]int, res)
-		for j := 0; j < res; j++ {
-			VoxelStorage.Voxel[i][j] = make([][]int, res)
-			for k := 0; k < res; k++ {
-				VoxelStorage.Voxel[i][j][k] = make([]int, bucketLength)
-			}
-		}
+	VoxelStorage.Voxel = make([][]int, res*res*res)
+	for i := 0; i < res*res*res; i++ {
+		VoxelStorage.Voxel[i] = make([]int, VDescrip.Buckets)
 	}
 
 	//Nil All Voxel Refs
-	for i := 0; i < res; i++ {
-		for j := 0; j < res; j++ {
-			for k := 0; k < res; k++ {
-				for t := 0; t < VoxelStorage.VoxelDescriptor.Buckets; t++ {
-					VoxelStorage.Voxel[i][j][k][t] = -1
-				}
-			}
+	for i := 0; i < res*res*res; i++ {
+		for t := 0; t < VDescrip.Buckets; t++ {
+			VoxelStorage.Voxel[i][t] = -1
 		}
 	}
+
+	//Set all Reference indexes to -1 For Initialization
+	for i := 0; i < VoxelStorage.VoxelDescriptor.Particles; i++ {
+		VoxelStorage.PVoxelIdx.Indexes[i].VoxIndex[0] = -1
+		VoxelStorage.PVoxelIdx.Indexes[i].VoxIndex[1] = -1
+	}
+
 	return &VoxelStorage
 }
 
-//Voxel Array Update
-func (v *VoxelArray) Update() error {
-	for i := 0; i < v.VoxelDescriptor.Particles; i++ {
-		err := v.UpdateParticle(i)
-		if err != nil {
-			return err
-		}
+func (v *VoxelIndex) IsNil() bool {
+	if v.VoxIndex[0] == -1 {
+		return true
 	}
-	return nil
+	return false
 }
 
-func (v *VoxelArray) UpdateParticle(pindex int) error {
+//Voxel Array Update
+func (v *VoxelArray) Update() {
+	v.Utilized = 0
+	for i := 0; i < v.VoxelDescriptor.Particles; i++ {
+		v.UpdateParticle(i)
+	}
+	if v.Utilization() < 0.90 {
+		fmt.Printf("\nError Voxel Particles Exclusion: %f ", v.Utilization())
+	}
+}
+
+func (v *VoxelArray) UpdateParticle(pindex int) {
 	//Find POSITION
 
 	refIndex := v.PVoxelIdx.Indexes[pindex]
 	r := refIndex.VoxIndex[0]
 	s := refIndex.VoxIndex[1]
-	t := refIndex.VoxIndex[2]
-	u := refIndex.VoxIndex[3]
 
 	vIndex := v.VoxelHash(v.PositionsRef[pindex])
 	x := vIndex.VoxIndex[0]
-	y := vIndex.VoxIndex[1]
-	z := vIndex.VoxIndex[2]
 
-	//No Update
-	if x == r && y == s && t == z {
-		return nil
+	//No Change In Particle Bucket
+	if r == x && !refIndex.IsNil() {
+		v.Utilized++
+		return
 	}
 
 	//Place particle in bucket if available
 	for i := 0; i < v.VoxelDescriptor.Buckets; i++ {
-		if v.Voxel[x][y][z][i] == -1 {
-			v.Voxel[x][y][z][i] = pindex
-			v.PVoxelIdx.Indexes[pindex] = VoxelIndex{[4]int{x, y, z, i}}
-			v.Voxel[r][s][t][u] = -1
-			return nil
+		if v.Voxel[x][i] == -1 {
+			v.Voxel[x][i] = pindex
+			v.PVoxelIdx.Indexes[pindex] = VoxelIndex{[2]int{x, i}}
+			if !refIndex.IsNil() {
+				v.Voxel[r][s] = -1
+			}
+			v.Utilized++
+			return
 		}
 	}
 
-	NeighborVoxels := v.VolumeLookup(vIndex)
+	NeighborVoxels := v.VolumeLookup(v.PositionsRef[pindex])
 
 	//Insert into Neighbor Voxel
 	for i := 0; i < len(NeighborVoxels.Indexes); i++ {
 		vxl := NeighborVoxels.Indexes[i]
 		for j := 0; j < v.VoxelDescriptor.Buckets; j++ {
 			p := vxl.VoxIndex[0]
-			q := vxl.VoxIndex[1]
-			w := vxl.VoxIndex[2]
-			if v.Voxel[p][q][w][j] == -1 {
-				v.Voxel[p][q][w][j] = pindex
-				v.PVoxelIdx.Indexes[pindex] = VoxelIndex{[4]int{p, q, w, j}}
-				v.Voxel[r][s][t][u] = -1
-				return nil
+			if v.Voxel[p][j] == -1 {
+				v.Voxel[p][j] = pindex
+				v.PVoxelIdx.Indexes[pindex] = VoxelIndex{[2]int{p, j}}
+				if !refIndex.IsNil() {
+					v.Voxel[r][s] = -1
+				}
+				v.Utilized++
+				return
 			}
 		}
 	}
 
 	//Particle Index Not Found
-	return fmt.Errorf("Particle %d No Voxel Space: [%d][%d][%d]\n", pindex, x, y, z)
+	//return fmt.Errorf("Particle %d No Voxel Space: [%d][%d][%d]\n", pindex, x, y, z)
 
+}
+
+func (v *VoxelArray) Utilization() float32 {
+	return float32(v.Utilized) / float32(v.VoxelDescriptor.Particles)
 }
 
 //Modulus Hashes A Position Into a Voxel Index Bucket - Lazy Hash Method
@@ -165,7 +175,7 @@ func (v *VoxelArray) VoxelHash(pos V.Vec32) VoxelIndex {
 	y := pos[1]
 	z := pos[2]
 
-	//Push Coordinates to Min Indexes if Outside Bounds
+	//Push Coordinates to Min Indexes if Outside Bounds - Handle Diff
 	if x < v.VoxelDescriptor.Min {
 		x = v.VoxelDescriptor.Min
 	}
@@ -176,60 +186,53 @@ func (v *VoxelArray) VoxelHash(pos V.Vec32) VoxelIndex {
 		z = v.VoxelDescriptor.Min
 	}
 
-	//Confine to Max Bounds
-	if x > v.VoxelDescriptor.Max {
-		x = v.VoxelDescriptor.Max
-	}
-	if y > v.VoxelDescriptor.Max {
-		y = v.VoxelDescriptor.Max
-	}
-	if z > v.VoxelDescriptor.Max {
-		z = v.VoxelDescriptor.Max
-	}
-
 	//Handle Negative Values For Modulus
-	if x < 0 {
-		x = -x + v.VoxelDescriptor.Max
-	}
+	x = x - v.VoxelDescriptor.Min
 
-	if y < 0 {
-		y = -y + v.VoxelDescriptor.Max
-	}
+	y = y - v.VoxelDescriptor.Min
 
-	if z < 0 {
-		z = -z + v.VoxelDescriptor.Max
-	}
+	z = z - v.VoxelDescriptor.Min
 
 	//Hash Position Indexes
 	x0 := int(x/v.VoxelDescriptor.DivLength) % v.VoxelDescriptor.Divisions
 	y0 := int(y/v.VoxelDescriptor.DivLength) % v.VoxelDescriptor.Divisions
 	z0 := int(z/v.VoxelDescriptor.DivLength) % v.VoxelDescriptor.Divisions
 
+	//All Indexes are Positive
+	if x0 < 0 {
+		x0 = x0 + v.VoxelDescriptor.Divisions
+	}
+	if y0 < 0 {
+		y0 = y0 + v.VoxelDescriptor.Divisions
+	}
+	if z0 < 0 {
+		z0 = z0 + v.VoxelDescriptor.Divisions
+	}
+
 	VIndex := VoxelIndex{}
-	VIndex.VoxIndex[0] = x0
-	VIndex.VoxIndex[1] = y0
-	VIndex.VoxIndex[2] = z0
-	VIndex.VoxIndex[0] = 0
+	VIndex.VoxIndex[0] = (z0*v.VoxelDescriptor.Divisions+y0)*v.VoxelDescriptor.Divisions + x0
+	VIndex.VoxIndex[1] = 0
 
 	return VIndex
 
 }
 
 func (v *VoxelArray) GetSamples(idx int) []int {
-	vIndex := v.PVoxelIdx.Indexes[idx]
-	return v.GetSampleVoxels(vIndex)
+	return v.GetSampleVoxels(v.PositionsRef[idx])
 }
 
-func (v *VoxelArray) GetSampleVoxels(pIndex VoxelIndex) []int {
-	mNeighbors := v.VolumeLookup(pIndex)
+//Gets Samples from position
+func (v *VoxelArray) GetSampleVoxels(pos V.Vec32) []int {
+	mNeighbors := v.VolumeLookup(pos)
 	sampleIndexes := make([]int, VOXEL_SAMPLES)
 	index := 0
 	nLength := len(mNeighbors.Indexes)
-
+	pindex := v.VoxelHash(pos)
 	//Get Initial Samples From This Particle Volume
 	for i := 0; i < v.VoxelDescriptor.Buckets && index < VOXEL_SAMPLES; i++ {
-		if v.Voxel[pIndex.VoxIndex[0]][pIndex.VoxIndex[1]][pIndex.VoxIndex[2]][i] != -1 {
-			sampleIndexes[index] = v.Voxel[pIndex.VoxIndex[0]][pIndex.VoxIndex[1]][pIndex.VoxIndex[2]][i]
+		sIndex := v.Voxel[pindex.VoxIndex[0]][i]
+		if sIndex != -1 {
+			sampleIndexes[index] = v.Voxel[pindex.VoxIndex[0]][i]
 			index++
 		}
 	}
@@ -238,11 +241,11 @@ func (v *VoxelArray) GetSampleVoxels(pIndex VoxelIndex) []int {
 	for i := 0; i < nLength && index < VOXEL_SAMPLES; i++ {
 
 		r := mNeighbors.Indexes[i].VoxIndex[0]
-		s := mNeighbors.Indexes[i].VoxIndex[1]
-		t := mNeighbors.Indexes[i].VoxIndex[2]
+
 		for q := 0; q < v.VoxelDescriptor.Buckets && index < VOXEL_SAMPLES; q++ {
-			if v.Voxel[r][s][t][q] != -1 {
-				sampleIndexes[index] = v.Voxel[r][s][t][q]
+			sIndex := v.Voxel[r][q]
+			if sIndex != -1 {
+				sampleIndexes[index] = v.Voxel[r][q]
 				index++
 			}
 		}
@@ -251,66 +254,24 @@ func (v *VoxelArray) GetSampleVoxels(pIndex VoxelIndex) []int {
 	return sampleIndexes
 }
 
-//Constructs Neihbor Voxel Structure Given VoxelIndex and Bounds
-func (v *VoxelArray) VolumeLookup(vIndex VoxelIndex) VoxelLookup {
+//Constructs Neighbor Voxels with position hashes
+func (v *VoxelArray) VolumeLookup(pos V.Vec32) VoxelLookup {
 
-	n0 := 3
-	n1 := 3
-	n2 := 3
-	x := vIndex.VoxIndex[0]
-	y := vIndex.VoxIndex[1]
-	z := vIndex.VoxIndex[2]
-
-	//Check All Bounds
-	i := x - 1
-	j := y - 1
-	k := z - 1
-
-	i0 := x + 1
-	j0 := y + 1
-	k0 := z + 1
-
-	//Check Bounds and Set Index Ranges
-	if x-1 < 0 {
-		i = x
-		n0 = n0 - 1
-	}
-	if x+1 > v.VoxelDescriptor.Divisions {
-		i0 = x
-		n0 = n0 - 1
-	}
-	if y-1 < 0 {
-		j = y
-		n1 = n1 - 1
-	}
-	if y+1 > v.VoxelDescriptor.Divisions {
-		j0 = j
-		n1 = n1 - 1
-	}
-	if z-1 < 0 {
-		k = z
-		n2 = n2 - 1
-	}
-	if z+1 > v.VoxelDescriptor.Divisions {
-		k0 = z
-		n2 = n2 - 1
-	}
-
-	vxNeighbors := VoxelLookup{make([]VoxelIndex, n0*n1*n2)}
-
+	vxNeighbors := VoxelLookup{make([]VoxelIndex, 27)}
+	i := 0
 	//Set Neighbor Volume Indexes
-	qIndex := 0
-	for r := i; r < i0; r++ {
-		for s := j; s < j0; s++ {
-			for t := k; t < k0; t++ {
-				if qIndex < n0*n1*n2 {
-					vxNeighbors.Indexes[qIndex] = VoxelIndex{[4]int{r, s, t, 0}}
-					qIndex++
-				}
+	for x := -1; x < 2; x++ {
+		for y := -1; y < 2; y++ {
+			for z := -1; z < 2; z++ {
+				nPos := V.Scale(pos, 1.0)
+				addVec := V.Vec32{float32(x) * v.VoxelDescriptor.DivLength, float32(y) * v.VoxelDescriptor.DivLength, float32(z) * v.VoxelDescriptor.DivLength}
+				nPos.Add(addVec)
+				vxlHash := v.VoxelHash(nPos)
+				vxNeighbors.Indexes[i] = vxlHash
+				i++
 			}
 		}
 	}
-
 	return vxNeighbors
 
 }
@@ -323,12 +284,8 @@ func (s VoxelArray) Run(status chan int) {
 
 	for !done {
 		if synced {
-			err := s.Update()
+			s.Update()
 			synced = false
-
-			if err != nil {
-				fmt.Printf(err.Error() + "\nVoxel Update Failed\n")
-			}
 			status <- THREAD_WAIT_SAMPLER //Thread has been synced
 			nStatus := <-status           //Wait on the next status update
 			if nStatus == THREAD_RUN_SAMPLER {
