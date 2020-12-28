@@ -106,7 +106,7 @@ const (
 	H20Kern           = 0.25     //Most important var - fine tune for fluid
 	H20LiqDensity     = 1.0      //g/cm^3
 	SOS               = 1400.0   //m/s (maximal information transfer) 1480 m/s with sounds
-	Particles         = 20       //15,625 Particles -- 1.9MB Positional Data Ram
+	Particles         = 15       //15,625 Particles -- 1.9MB Positional Data Ram
 	DefaultTimeStep   = 0.00001  //Evolution at Small Interval
 	EOSGamma          = 7        //Equation of State Exponent Feature
 	PCISamples        = 10
@@ -140,6 +140,8 @@ func RenderFluidGL(config *DslFlConfig) error {
 
 	//Scale the Positions
 	U.ScalePositions(thisFluid.SPH.Positions, thisFluid.Config.MdlOrg, thisFluid.Config.PrtlScale)
+	t0 := ((config.MdlW - (config.MdlW * SPHScaleParticles)) / 2) - mfp.ParticleRadius
+	U.TranslatePositions(thisFluid.SPH.Positions, V.Vec32{-t0, -t0, 0})
 	//Set OpenGL Windowing Context with GLFW and GO-GL Bindings
 	glWindowProperties := AppWindow{1920, 1080, "Diesel Particle SPH"}
 	//Perform OpenGL Setup..Need to Lock Thread fr all OpenGL Context Calls
@@ -168,14 +170,14 @@ func (this *DSLFluidRenderer) Run() {
 
 	var fluidStatus chan int = make(chan int)
 	var samplerStatus chan int = make(chan int)
-	var densityStatus chan int = make(chan int)
+	//var densityStatus chan int = make(chan int)
 	spdinterval := float64(0.09) //Sync Every 2.0 Seconds
-	densityinterval := float64(0.01)
+	//	densityinterval := float64(0.01)
 	samplerError := false
 
 	//Thread Most of the Fluid Routines // For Example Collision // Density Updates Etc
 	go this.SPH.Compute(fluidStatus, this.Config.PrtlInterval)
-	go this.SPH.ComputeDensities(densityStatus)
+	//	go this.SPH.ComputeDensities(densityStatus)
 	go this.SPH.Sampler.Run(samplerStatus)
 
 	this.Anim.LastSamplerSync = time.Now()
@@ -200,13 +202,15 @@ func (this *DSLFluidRenderer) Run() {
 		}
 
 		//Update the Density Thread
-		if time.Now().Sub(this.Anim.LastDensitySync).Seconds() > densityinterval {
-			densitySync := <-densityStatus
-			if densitySync == DENSITY_THREAD_WAIT {
-				densityStatus <- DENSITY_THREAD_RUN
-				this.Anim.LastDensitySync = time.Now()
+		/*
+			if time.Now().Sub(this.Anim.LastDensitySync).Seconds() > densityinterval {
+				densitySync := <-densityStatus
+				if densitySync == DENSITY_THREAD_WAIT {
+					densityStatus <- DENSITY_THREAD_RUN
+					this.Anim.LastDensitySync = time.Now()
+				}
 			}
-		}
+		*/
 
 	} //End GL render loop
 } //End func

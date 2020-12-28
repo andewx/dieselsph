@@ -126,7 +126,8 @@ func (t *Triangle) BarycentricCollision(P Vec.Vec32, V Vec.Vec32, n Vec.Vec32, d
 	//This needs to be scaled with velocity or time step needs to be decreased (dotp10 > 0 && dv0 < 0) ||
 	if dist <= r {
 		coord, collision := t.Barycentric(&P)
-		return n, coord, p0, collision
+		P = Vec.Add(P, Vec.Scale(V, -1.0*dt))
+		return n, coord, P, collision
 	} else {
 		return n, Vec.Vec32{}, Vec.Vec32{}, false
 	}

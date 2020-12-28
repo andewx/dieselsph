@@ -42,7 +42,6 @@ func Abs(a float32) float32 {
 func ScalePositions(pos []V.Vec32, origin V.Vec32, scale float32) {
 
 	//Complex Matrix Mult Didn't Work Completely with the Affine Portion Lol
-
 	count := len(pos)
 
 	for i := 0; i < count; i++ {
@@ -57,5 +56,16 @@ func ScalePositions(pos []V.Vec32, origin V.Vec32, scale float32) {
 	}
 
 	return
+}
+
+func TranslatePositions(pos []V.Vec32, trans V.Vec32) {
+	count := len(pos)
+
+	for i := 0; i < count; i++ {
+		v := pos[i]
+		v.Add(trans)
+		pos[i] = v
+
+	}
 
 }

@@ -39,13 +39,14 @@ type DieselContext struct {
 	ModelShaderLoc  [2]int32
 	ViewShaderLoc   [2]int32
 	ProjShaderLoc   [2]int32
-	RotShaderLoc    [2]int32
-	RotOriginLoc    [2]int32
-	ModeLoc         int32
+	RotShaderLoc    [4]int32
+	RotOriginLoc    [4]int32
 	Frames          int32
 	GLFWindow       *glfw.Window
 	VertexSRC       string
 	FragSRC         string
+	GeomVertexSRC   string
+	GeomFragSRC     string
 	RotX            *V.Mat3
 	RotY            *V.Mat3
 	RotOriginTrans  *V.Mat4 //Positive Translation
@@ -65,6 +66,7 @@ var RotAngleX float32
 var RotAngleY float32
 var Fps float64
 var lastTime time.Time
+var animationTime float64
 
 // initGlfw initializes glfw and returns a Window to use.
 func InitGLFW(a *AppWindow) *glfw.Window {
@@ -75,6 +77,7 @@ func InitGLFW(a *AppWindow) *glfw.Window {
 	state_hold_mouse = false
 	RotateTime = time.Now()
 	lastTime = time.Now()
+	animationTime = 0.0
 
 	glfw.WindowHint(glfw.Resizable, glfw.False)
 	glfw.WindowHint(glfw.ContextVersionMajor, 4) // OR 2
@@ -104,8 +107,10 @@ func InitOpenGL(sph *F.SPHFluid) (*DieselContext, error) {
 	log.Println("OpenGL version", version)
 
 	//Load Shader Strings from files
-	vtxFile := "../shaders/ParticleVTX.glsl"
-	frgFile := "../shaders/ParticleFRG.glsl"
+	vtxFile := "../shaders/sph.vert.glsl"
+	frgFile := "../shaders/sph.frag.glsl"
+	geomVtxFile := "../shaders/geom.vert.glsl"
+	geomFrgFile := "../shaders/geom.frag.glsl"
 
 	//Easy Load Strings
 	sourceVTX, err := ioutil.ReadFile(vtxFile)
@@ -117,10 +122,21 @@ func InitOpenGL(sph *F.SPHFluid) (*DieselContext, error) {
 		return nil, err
 	}
 
+	geomVTX, err := ioutil.ReadFile(geomVtxFile)
+	if checkError(err) {
+		return nil, err
+	}
+	geomFRG, err := ioutil.ReadFile(geomFrgFile)
+	if checkError(err) {
+		return nil, err
+	}
+
 	dslContext.VertexSRC = string(sourceVTX) + "\x00"
 	dslContext.FragSRC = string(sourceFRG) + "\x00"
+	dslContext.GeomVertexSRC = string(geomVTX) + "\x00"
+	dslContext.GeomFragSRC = string(geomFRG) + "\x00"
 
-	//Handled by local function compile Shader
+	//COMPILE GLSL SHADER OBJECTS
 	vtxSHO, err := compileShader(dslContext.VertexSRC, gl.VERTEX_SHADER)
 	if checkError(err) {
 		return nil, err
@@ -129,15 +145,19 @@ func InitOpenGL(sph *F.SPHFluid) (*DieselContext, error) {
 	if checkError(err) {
 		return nil, err
 	}
+	gVtxSHO, err := compileShader(dslContext.VertexSRC, gl.VERTEX_SHADER)
+	if checkError(err) {
+		return nil, err
+	}
+	gFrgSHO, err := compileShader(dslContext.FragSRC, gl.FRAGMENT_SHADER)
+	if checkError(err) {
+		return nil, err
+	}
 
 	prog1 := gl.CreateProgram()
 	gl.AttachShader(prog1, vtxSHO)
 	gl.AttachShader(prog1, frgSHO)
 	gl.LinkProgram(prog1)
-
-	//Free up context Strings
-	//dslContext.VertexSRC = ""
-	//	dslContext.FragSRC = ""
 
 	//Generate Diesel Context which includes cameras an stuff
 	n := float32(1.0)
@@ -168,7 +188,7 @@ func InitOpenGL(sph *F.SPHFluid) (*DieselContext, error) {
 	dslContext.RotOriginTrans = &rot0
 	dslContext.RotOriginTrans0 = &rot1
 	dslContext.RotOrigin = &rotOrigin
-	//have to fucking wrangle a utf-8 out of a string again
+
 	dslContext.ModelShaderLoc[0] = gl.GetUniformLocation(prog1, gl.Str("model\x00"))
 	dslContext.ViewShaderLoc[0] = gl.GetUniformLocation(prog1, gl.Str("view\x00"))
 	dslContext.ProjShaderLoc[0] = gl.GetUniformLocation(prog1, gl.Str("projection\x00"))
@@ -176,17 +196,48 @@ func InitOpenGL(sph *F.SPHFluid) (*DieselContext, error) {
 	dslContext.RotShaderLoc[1] = gl.GetUniformLocation(prog1, gl.Str("rotY\x00"))
 	dslContext.RotOriginLoc[0] = gl.GetUniformLocation(prog1, gl.Str("rotOriginTrans0\x00")) //Positive Trans
 	dslContext.RotOriginLoc[1] = gl.GetUniformLocation(prog1, gl.Str("rotOriginTrans1\x00")) //Negative Translation
-	dslContext.ModeLoc = gl.GetUniformLocation(prog1, gl.Str("mode\x00"))
-	//View/World matrix
 
-	//VBO/VAO handle
+	prog2 := gl.CreateProgram()
+	gl.AttachShader(prog2, gVtxSHO)
+	gl.AttachShader(prog2, gFrgSHO)
+	gl.LinkProgram(prog2)
+	dslContext.PrgID[1] = prog2
+
+	//Query Active Uniforms in Program 2
+	sizeN := int32(0)
+	maxLength := int32(0)
+	gl.GetProgramiv(prog2, gl.ACTIVE_UNIFORM_MAX_LENGTH, &maxLength)
+	gl.GetProgramiv(prog2, gl.ACTIVE_UNIFORMS, &sizeN)
+
+	constructString := ""
+
+	for i := 0; i < int(maxLength); i++ {
+		constructString = constructString + " "
+	}
+	constructString = constructString + "\x00"
+
+	charBuf := gl.Str(constructString)
+	sizebuf := int32(0)
+	sizeVar := int32(0)
+	typeVar := uint32(0)
+	for i := 0; i < 7; i++ {
+		gl.GetActiveUniform(prog2, uint32(i), maxLength, &sizebuf, &sizeVar, &typeVar, charBuf)
+		varName := gl.GoStr(charBuf)
+		fmt.Printf("Uniform[%d]: %s\n", i, varName)
+	}
+	gl.UseProgram(prog2)
+	dslContext.ModelShaderLoc[1] = gl.GetUniformLocation(prog2, gl.Str("model\x00"))
+	dslContext.ViewShaderLoc[1] = gl.GetUniformLocation(prog2, gl.Str("view\x00"))
+	dslContext.ProjShaderLoc[1] = gl.GetUniformLocation(prog2, gl.Str("projection\x00"))
+	dslContext.RotShaderLoc[2] = gl.GetUniformLocation(prog2, gl.Str("rotX\x00"))
+	dslContext.RotShaderLoc[3] = gl.GetUniformLocation(prog2, gl.Str("rotY\x00"))
+	dslContext.RotOriginLoc[2] = gl.GetUniformLocation(prog2, gl.Str("rotOriginTrans0\x00")) //Positive Trans
+	dslContext.RotOriginLoc[3] = gl.GetUniformLocation(prog2, gl.Str("rotOriginTrans1\x00")) //Negative Translation
 
 	MakeVAO(sph, &dslContext)
 	gl.Enable(gl.BLEND)
 	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
-	fmt.Printf("OpenGL Initiated\n")
-	//Pass uint32
 	return &dslContext, nil
 }
 
@@ -213,12 +264,13 @@ func Draw(sph *F.SPHFluid, dsl *DieselContext, anim *AnimationTimer, interval fl
 	//FPS
 	elapse_s := lastTime.Sub(time.Now()).Seconds()
 	Fps = 1 / elapse_s
+	animationTime = sph.Timer.T
 
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 	gl.ClearColor(0.9, 0.9, 0.9, 1.0)
-	gl.UseProgram(dsl.PrgID[0])
 
-	//Set uniforms
+	//-------------SET GPU GLOBAL TRANSFORMATIONS--------------------------------//
+
 	dsl.View.Translation(GlobalTrans) //Should accumulate Translationinto the View Matrix
 	dsl.RotOriginTrans[12] = dsl.RotOrigin[0]
 	dsl.RotOriginTrans[13] = dsl.RotOrigin[1]
@@ -232,6 +284,31 @@ func Draw(sph *F.SPHFluid, dsl *DieselContext, anim *AnimationTimer, interval fl
 	GlobalTrans[1] *= 0
 	GlobalTrans[2] *= 0
 
+	gl.UseProgram(dsl.PrgID[0])
+	gl.UniformMatrix4fv(dsl.ModelShaderLoc[0], 1, false, &dsl.Model[0])
+	gl.UniformMatrix4fv(dsl.ViewShaderLoc[0], 1, false, &dsl.View[0])
+	gl.UniformMatrix4fv(dsl.ProjShaderLoc[0], 1, false, &dsl.Proj[0])
+	gl.UniformMatrix3fv(dsl.RotShaderLoc[0], 1, false, &dsl.RotX[0])
+	gl.UniformMatrix3fv(dsl.RotShaderLoc[1], 1, false, &dsl.RotY[0])
+	gl.UniformMatrix4fv(dsl.RotOriginLoc[0], 1, false, &dsl.RotOriginTrans[0])
+	gl.UniformMatrix4fv(dsl.RotOriginLoc[1], 1, false, &dsl.RotOriginTrans0[0])
+
+	gl.UseProgram(dsl.PrgID[1])
+
+	gl.UniformMatrix4fv(dsl.ModelShaderLoc[1], 1, false, &dsl.Model[0])
+	gl.UniformMatrix4fv(dsl.ViewShaderLoc[1], 1, false, &dsl.View[0])
+	gl.UniformMatrix4fv(dsl.ProjShaderLoc[1], 1, false, &dsl.Proj[0])
+	gl.UniformMatrix3fv(dsl.RotShaderLoc[2], 1, false, &dsl.RotX[0])
+	gl.UniformMatrix3fv(dsl.RotShaderLoc[3], 1, false, &dsl.RotY[0])
+	gl.UniformMatrix4fv(dsl.RotOriginLoc[2], 1, false, &dsl.RotOriginTrans[0])
+	gl.UniformMatrix4fv(dsl.RotOriginLoc[3], 1, false, &dsl.RotOriginTrans0[0])
+
+	//-------------DRAW STATIC GEOMETRY--------------------------------//
+
+	gl.BindVertexArray(dsl.VAO[1])
+	gl.DrawArrays(gl.LINES, 0, int32(len(sph.Colliders.Vertexes)))
+
+	//--------------SPH PARTICLE DRAW---------------------------------------
 	//Sync Particle System With Thread
 	if time.Now().Sub(anim.LastParticleSync).Seconds() >= interval {
 		status := <-c //Fluid should be synced
@@ -242,34 +319,14 @@ func Draw(sph *F.SPHFluid, dsl *DieselContext, anim *AnimationTimer, interval fl
 			gl.VertexAttribPointer(0, 3, gl.FLOAT, false, 0, nil)
 		}
 		anim.LastParticleSync = time.Now()
-
-		//Clear and update Grid
-		//	sph.SPHGrid.Clear()
-		//	sph.SPHGrid.Load(sph.Positions)
-
 		c <- FLUID_THREAD_WORKING //Signal the channel for Fluid to Continue
 	}
 
-	gl.UniformMatrix4fv(dsl.ModelShaderLoc[0], 1, false, &dsl.Model[0])
-	gl.UniformMatrix4fv(dsl.ViewShaderLoc[0], 1, false, &dsl.View[0])
-	gl.UniformMatrix4fv(dsl.ProjShaderLoc[0], 1, false, &dsl.Proj[0])
-	gl.UniformMatrix3fv(dsl.RotShaderLoc[0], 1, false, &dsl.RotX[0])
-	gl.UniformMatrix3fv(dsl.RotShaderLoc[1], 1, false, &dsl.RotY[0])
-	gl.UniformMatrix4fv(dsl.RotOriginLoc[0], 1, false, &dsl.RotOriginTrans[0])
-	gl.UniformMatrix4fv(dsl.RotOriginLoc[1], 1, false, &dsl.RotOriginTrans0[0])
-
-	gl.Uniform1i(dsl.ModeLoc, 0) // Draw opaque particles
-
-	gl.PointSize(5.0)
-
-	//Bind Particles & Draw
+	gl.UseProgram(dsl.PrgID[0])
+	gl.PointSize(sph.Mfp.KernelRadius * 400)
 	gl.BindVertexArray(dsl.VAO[0])
 	gl.DrawArrays(gl.POINTS, 0, int32(sph.Count))
-	//Bind Collision Geometry & Draw
-	gl.Uniform1i(dsl.ModeLoc, 1) //Transparent Lit Surface
-	gl.BindVertexArray(dsl.VAO[1])
 
-	gl.DrawArrays(gl.LINES, 0, int32(len(sph.Colliders.Vertexes)))
 	glfw.PollEvents()
 	dsl.GLFWindow.SwapBuffers()
 
@@ -362,6 +419,9 @@ func ProcessInput(w *glfw.Window, key glfw.Key, scancode int, action glfw.Action
 	if key == glfw.KeyDown {
 		p := V.Vec32{0.0, 1.0, 0.0}
 		GlobalTrans.Add(*p.Scale(trans))
+	}
+	if key == glfw.KeyTab {
+		fmt.Printf("Current Simulation Time: %f\n", animationTime)
 	}
 }
 
